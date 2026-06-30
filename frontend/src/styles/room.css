@@ -323,9 +323,40 @@
 
 .vr-center { flex: 1; display: grid; place-items: center; color: var(--vr-text-dim); }
 
-@media (max-width: 720px) {
-  .vr-panel { position: absolute; right: 8px; top: 60px; bottom: 90px; z-index: 20; width: auto; left: 8px; }
+@media (max-width: 768px) {
+  /* Header compacto */
+  .vr-header { padding: 8px 10px; gap: 8px; }
+  .vr-title { font-size: 14px; }
+  .vr-meta { gap: 8px; font-size: 12px; }
   .vr-meta .vr-count-label { display: none; }
+  .vr-end-btn { padding: 6px 9px; font-size: 12px; }
+
+  /* O vídeo ocupa a tela toda; o painel vira overlay SÓ sobre a área de vídeo
+     (header e controles continuam visíveis). Começa fechado (ver VideoRoom). */
+  .vr-stage { position: relative; padding: 0 6px 6px; gap: 0; }
+  .vr-panel {
+    position: absolute; inset: 0; width: auto; z-index: 30;
+    border-radius: 12px;
+  }
+
+  /* Controles cabem na tela (encolhem e quebram linha se preciso) */
+  .vr-controls { padding: 8px 6px; }
+  .vr-pill { gap: 6px; padding: 8px 10px; flex-wrap: wrap; max-width: 100%; }
+  .vr-ctrl { width: 42px; height: 42px; }
+  .vr-ctrl svg { width: 18px; height: 18px; }
+  .vr-ctrl[data-leave="true"] { width: 48px; }
+  .vr-sep { display: none; }
+
+  /* Compartilhamento de tela: PiP da câmera menor */
+  .vr-spotlight-pip { width: 104px; right: 8px; bottom: 8px; }
+
+  /* Barras de grupos/avisos ocupam a largura */
+  .vr-bo-hostbar, .vr-bo-banner { margin: 0 6px 6px; }
+  .vr-bo-row input, .vr-bo-row select { min-width: 0; flex: 1; }
+
+  /* Menu "⋮" e modais ocupam quase a tela */
+  .vr-ctrl-menu { right: 50%; transform: translateX(50%); }
+  .vr-sheet { width: 96vw; max-height: 90vh; }
 }
 
 /* ===================== Grupos (breakout) ===================== */
@@ -481,3 +512,14 @@
 .vr-panel-title { flex: 1; font-size: 14px; font-weight: 700; color: var(--vr-text); }
 .vr-panel-x { background: none; border: none; color: var(--vr-text-dim); font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 7px; }
 .vr-panel-x:hover { color: var(--vr-text); background: var(--vr-surface-2); }
+
+/* Botão "ativar áudio" — aparece só quando o navegador bloqueia o autoplay
+   (típico no Safari/iOS). Fica centralizado no topo, acima de tudo. */
+.vr-audio-gate {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 70;
+  background: linear-gradient(135deg, var(--brand-accent), var(--brand-accent-hover));
+  color: #fff; border: none; border-radius: 999px;
+  padding: 11px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
+  box-shadow: var(--vr-shadow); animation: vr-pulse 1.8s infinite;
+}
+.vr-audio-gate:hover { filter: brightness(1.05); }

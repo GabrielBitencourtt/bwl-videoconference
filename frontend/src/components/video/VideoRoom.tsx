@@ -3,7 +3,7 @@ import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, useParticipants, useTrackToggle, useRoomContext,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import "@livekit/components-styles";
 import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
@@ -228,6 +228,7 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
         <RoomShell roomId={roomId} roomTitle={roomTitle} isStaff={!!isStaff} inviteUrl={inviteUrl} senderName={displayName} identity={identity ?? undefined} breakout={boCtx} />
         {identity && <RemoteControlEnforcer roomId={roomId} identity={identity} isStaff={!!isStaff} />}
         <RoomAudioRenderer />
+        <AudioGate />
       </LiveKitRoom>
       {boChoices && <BreakoutChooser groups={boChoices} onPick={(g) => enterBreakout(g, null)} />}
     </>
@@ -282,6 +283,24 @@ function BreakoutBanner({ groupName, endsAt, message, onLeave }: { groupName: st
         <button className="vr-bo-banner-btn" onClick={onLeave}>Voltar à sala principal</button>
       </div>
     </div>
+  );
+}
+
+/* ---------------- Áudio: gate para Safari/mobile (autoplay bloqueado) -------- */
+function AudioGate() {
+  const room = useRoomContext();
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => {
+    const update = () => setBlocked(!room.canPlaybackAudio);
+    update();
+    room.on(RoomEvent.AudioPlaybackStatusChanged, update);
+    return () => { room.off(RoomEvent.AudioPlaybackStatusChanged, update); };
+  }, [room]);
+  if (!blocked) return null;
+  return (
+    <button className="vr-audio-gate" onClick={() => room.startAudio().catch(() => {})}>
+      🔊 Toque para ativar o áudio
+    </button>
   );
 }
 
@@ -396,7 +415,10 @@ function PreJoin({ title, name, camOn, micOn, setCamOn, setMicOn, onJoin }: {
 /* ---------------- In-room shell ---------------- */
 function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; breakout: BreakoutCtx }) {
   const sdk = useSDK();
-  const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>("chat");
+  // No celular o painel começa fechado pra mostrar o vídeo; no desktop abre no chat.
+  const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(
+    () => (typeof window !== "undefined" && window.innerWidth <= 768 ? null : "chat"),
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);   // Configurações = modal central
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
