@@ -1,0 +1,44 @@
+# ---------- Dependencies / build ----------
+node_modules/
+dist/
+build/
+.vite/
+.cache/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# ---------- Secrets — NUNCA commitar ----------
+# Diretório de segredos (pem, chaves LiveKit/S3, node secret)
+infra/.secrets/
+# Envs reais de produção/deploy
+infra/.env
+infra/deploy/app/backend.env
+infra/deploy/livekit/.env
+# Qualquer .env real (mantém apenas *.example)
+.env
+*.env
+.env.local
+.env.*.local
+!*.env.example
+!.env.example
+# Chaves/certificados soltos
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---------- OS / editor ----------
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.swp

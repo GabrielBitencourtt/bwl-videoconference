@@ -1,0 +1,329 @@
+import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import ReactDOM from "react-dom/client";
+import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
+import { SDKContext } from "./lib/sdk-context";
+import { createVideoRoomsSDK } from "./lib/video-rooms-sdk";
+import { applyBranding } from "./lib/branding";
+import { clientApi } from "./client/clientApi";
+import VideoRoom from "./components/video/VideoRoom";
+import NewRoomModal, { type NewRoomData } from "./components/NewRoomModal";
+import LobbyWaiting from "./components/video/LobbyWaiting";
+import "./styles/app.css";
+
+// Egress recording template — loaded only when egress opens /recording-view.
+const RecordingView = lazy(() => import("./components/video/RecordingView"));
+// Admin panel — loaded only on /admin.
+const AdminApp = lazy(() => import("./admin/AdminApp"));
+// Public integration docs — loaded only on /documentation.
+const Documentation = lazy(() => import("./components/Documentation"));
+// SaaS marketing landing — loaded only on /.
+const Landing = lazy(() => import("./components/Landing"));
+// Client self-service portal — loaded only on /portal.
+const ClientApp = lazy(() => import("./client/ClientApp"));
+
+const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const wsBase = import.meta.env.VITE_WS_BASE || "ws://localhost:8000";
+
+// Host/app SDK: identity + tenant come from the portal session cookie (same-origin),
+// not from spoofable X-User-* headers. The backend reads `client_session`.
+const sdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}) });
+
+/** Guests join via invite token — no host auth headers. */
+const guestSdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}) });
+
+const STATUS_LABEL: Record<string, string> = { active: "ativa", ended: "encerrada" };
+function fmtDate(iso?: string): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
+
+function Logo() {
+  return <div className="app-logo">V</div>;
+}
+
+function Home() {
+  const [me, setMe] = useState<any>(null);
+  const [booting, setBooting] = useState(true);
+  const [usage, setUsage] = useState<any>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter] = useState<"all" | "active" | "ended">("all");
+
+  const refresh = () => {
+    sdk.rooms.list().then(setRooms).catch(() => {});
+    clientApi("/usage").then(setUsage).catch(() => {});
+  };
+
+  useEffect(() => {
+    clientApi<any>("/me")
+      .then((m) => {
+        setMe(m);
+        applyBranding(m.license?.branding || {});
+        if (m.user?.name) localStorage.setItem("uname", m.user.name);
+        refresh();
+      })
+      .catch(() => { location.href = "/portal"; })
+      .finally(() => setBooting(false));
+  }, []);
+
+  const limits = me?.license?.limits;
+  const activeCount = usage?.rooms_active ?? rooms.filter((r) => r.status === "active").length;
+  const roomCap = limits && limits.max_rooms !== -1 ? limits.max_rooms : null;
+  const atLimit = roomCap != null && activeCount >= roomCap;
+
+  const createRoom = async (data: NewRoomData) => {
+    try {
+      const r = await sdk.rooms.create(data as any);
+      location.href = `/r/${r.id}`;
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      alert(msg.includes("limite") ? "Limite de salas ativas da sua licença atingido." : "Não foi possível criar a sala.");
+      setShowModal(false);
+    }
+  };
+
+  const endRoom = async (id: string) => {
+    if (!confirm("Encerrar esta sala?")) return;
+    await sdk.rooms.end(id).catch(() => {});
+    refresh();
+  };
+
+  const logout = async () => { await clientApi("/logout", { method: "POST" }).catch(() => {}); location.href = "/portal"; };
+
+  const openRecording = async (id: string) => {
+    try {
+      const r = await sdk.recording.get(id);
+      if (r.url) window.open(r.url, "_blank", "noopener");
+      else alert("Gravação ainda processando — tente novamente em instantes.");
+    } catch {
+      alert("Não foi possível abrir a gravação.");
+    }
+  };
+
+  if (booting) return <div className="app-shell app-center"><div className="app-sub">Carregando…</div></div>;
+  if (!me) return null; // redirecting to /portal
+
+  const brand = me.license?.branding || {};
+  const firstName = (me.user?.name || "").split(" ")[0] || "Anfitrião";
+  const shown = rooms.filter((r) => filter === "all" || r.status === filter);
+
+  return (
+    <div className="app-shell">
+      <header className="app-topbar">
+        <div className="app-brand">
+          {brand.logo_url ? <img className="app-logo app-logo-img" src={brand.logo_url} alt="" /> : <Logo />}
+          <span>{brand.product_name || "Video Rooms"}</span>
+        </div>
+        <div className="app-user">
+          <span className="app-lic-chip">{me.license?.name}</span>
+          <a className="app-navlink" href="/portal">Portal</a>
+          <div className="app-avatar" title={me.user?.email}>{firstName.slice(0, 1).toUpperCase()}</div>
+          <button className="app-navlink app-navlink-btn" onClick={logout}>Sair</button>
+        </div>
+      </header>
+
+      <main className="app-main">
+        <section className="app-hero">
+          <h1>Olá, {firstName} 👋</h1>
+          <p className="app-sub">Crie uma sala e convide participantes em segundos.</p>
+        </section>
+
+        <div className="app-stats">
+          <div className="app-stat"><span className="app-stat-v">{me.license?.plan || "—"}</span><span className="app-stat-l">Plano</span></div>
+          <div className="app-stat" data-warn={atLimit ? "1" : undefined}>
+            <span className="app-stat-v">{activeCount}{roomCap != null ? <span className="app-stat-cap"> / {roomCap}</span> : <span className="app-stat-cap"> / ∞</span>}</span>
+            <span className="app-stat-l">Salas ativas</span>
+          </div>
+          <div className="app-stat"><span className="app-stat-v">{limits?.max_participants ?? "—"}</span><span className="app-stat-l">Máx. por sala</span></div>
+          <div className="app-stat"><span className="app-stat-v">{limits?.recording_enabled ? "Sim" : "Não"}</span><span className="app-stat-l">Gravação</span></div>
+        </div>
+
+        <div className="app-create">
+          <button className="app-btn app-btn-create" disabled={atLimit} onClick={() => setShowModal(true)}>
+            + Nova sala de vídeo
+          </button>
+          {atLimit && <p className="app-limit-msg">Você atingiu o limite de {roomCap} sala(s) ativa(s) da sua licença. Encerre uma sala para criar outra.</p>}
+        </div>
+
+        {showModal && <NewRoomModal onClose={() => setShowModal(false)} onCreate={createRoom} />}
+
+        <div className="app-list-head">
+          <h2 className="app-section-title">Suas salas</h2>
+          <div className="app-tabs">
+            {([["all", "Todas"], ["active", "Ativas"], ["ended", "Encerradas"]] as const).map(([k, lbl]) => (
+              <button key={k} className="app-tab" data-active={filter === k} onClick={() => setFilter(k)}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="app-room-list">
+          {shown.length === 0 && <div className="app-empty">Nenhuma sala {filter === "active" ? "ativa" : filter === "ended" ? "encerrada" : "ainda"}.</div>}
+          {shown.map((r) => (
+            <div className="app-room" key={r.id}>
+              <a className="app-room-info" href={`/r/${r.id}`}>
+                <span className="app-room-title">{r.title}</span>
+                <span className="app-room-date">{fmtDate(r.created_at)}</span>
+              </a>
+              <div className="app-room-actions">
+                {r.recording_url && (
+                  <button className="app-rec" onClick={() => openRecording(r.id)} title="Assistir gravação">▶ Gravação</button>
+                )}
+                <span className="app-badge" data-status={r.status}>{STATUS_LABEL[r.status] || r.status}</span>
+                {r.status === "active" ? (
+                  <>
+                    <a className="app-join" href={`/r/${r.id}`}>Entrar</a>
+                    <button className="app-end" onClick={() => endRoom(r.id)}>Encerrar</button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function RoomPage() {
+  const { id } = useParams();
+  const name = localStorage.getItem("uname") || "Anfitrião";
+  return <VideoRoom roomId={id!} isStaff displayName={name} onLeft={() => (location.href = "/app")} />;
+}
+
+/** Iframe embed: the client's backend mints a token (with its API key) and loads
+ *  this URL in an <iframe>. The API key never reaches the browser. */
+function EmbedPage() {
+  const p = new URLSearchParams(location.search);
+  const roomId = p.get("room") || "";
+  const token = p.get("token") || "";
+  const url = p.get("url") || "";
+  const name = p.get("name") || "Participante";
+  const identity = p.get("identity") || undefined;
+  const staff = p.get("staff") === "1";
+
+  // Embed roda em outra origem (iframe), então não há cookie de sessão. Para as
+  // chamadas REST de host (abrir quadro, gravar, encerrar) o backend precisa
+  // identificar o usuário — enviamos a identidade via X-User-* (a mesma do token).
+  const embedSdk = useMemo(
+    () => createVideoRoomsSDK({
+      apiBase, wsBase,
+      headers: () => identity
+        ? { "X-User-Id": identity, "X-User-Name": name, "X-User-Role": staff ? "admin" : "user" }
+        : {},
+    }),
+    [identity, name, staff],
+  );
+
+  useEffect(() => {
+    if (roomId) guestSdk.rooms.publicInfo(roomId).then((r) => applyBranding(r.branding)).catch(() => {});
+  }, [roomId]);
+  if (!roomId || !token) {
+    return <div className="app-shell app-center"><div className="app-card app-gate"><div className="app-logo app-logo-lg">V</div><p className="app-sub">Parâmetros de embed ausentes (room, token).</p></div></div>;
+  }
+  return (
+    <SDKContext.Provider value={embedSdk}>
+      <VideoRoom roomId={roomId} displayName={name} isStaff={staff}
+        presetToken={token} presetLivekitUrl={url} presetIdentity={identity} />
+    </SDKContext.Provider>
+  );
+}
+
+function GuestPage() {
+  const { token } = useParams();
+  const [room, setRoom] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phase, setPhase] = useState<"name" | "lobby" | "room" | "denied">("name");
+  const lobbyIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    guestSdk.rooms.byGuestToken(token).then((r) => { setRoom(r); applyBranding((r as any).branding); }).catch(() => setError("Convite inválido ou sala encerrada."));
+  }, [token]);
+
+  // Lobby: join the waiting room and wait for the host's decision.
+  useEffect(() => {
+    if (phase !== "lobby" || !room) return;
+    guestSdk.lobby.join(room.id, name.trim(), "guest").then((res: any) => { lobbyIdRef.current = res.id; }).catch(() => {});
+    return guestSdk.subscribe(room.id, (event, payload) => {
+      if (event === "lobby-decision" && payload.lobby_id === lobbyIdRef.current) {
+        setPhase(payload.admit ? "room" : "denied");
+      }
+      if (event === "room-ended") setError("A sala foi encerrada.");
+    });
+  }, [phase, room]);
+
+  if (error)
+    return <div className="app-shell app-center"><div className="app-card app-gate"><div className="app-logo app-logo-lg">V</div><p className="app-sub">{error}</p></div></div>;
+
+  if (!room)
+    return <div className="app-shell app-center"><div className="app-card app-gate"><div className="app-logo app-logo-lg">V</div><p className="app-sub">Carregando convite…</p></div></div>;
+
+  if (phase === "name") {
+    return (
+      <div className="app-shell app-center">
+        <div className="app-card app-gate">
+          {room.branding?.logo_url
+            ? <img className="app-logo app-logo-lg app-logo-img" src={room.branding.logo_url} alt="" />
+            : <div className="app-logo app-logo-lg">V</div>}
+          <h1>{room.title}</h1>
+          <p className="app-sub">Você foi convidado{room.tenant_name ? ` por ${room.tenant_name}` : ""} para esta sala.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!name.trim()) return;
+              if (room.require_email && !/.+@.+\..+/.test(email.trim())) return;
+              setPhase(room.lobby_enabled ? "lobby" : "room");
+            }}
+          >
+            <input className="app-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu nome" autoFocus />
+            {room.require_email && (
+              <input className="app-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Seu e-mail" required />
+            )}
+            <button className="app-btn">{room.lobby_enabled ? "Entrar no saguão" : "Entrar na sala"}</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "lobby" || phase === "denied") {
+    return (
+      <LobbyWaiting
+        roomTitle={room.title}
+        timerTitle={room.lobby_timer_title}
+        timerSeconds={room.lobby_timer_seconds}
+        bgVideo={room.lobby_bg_video}
+        denied={phase === "denied"}
+        onTimerEnd={() => { if (room.lobby_auto_admit) setPhase("room"); }}
+      />
+    );
+  }
+
+  return (
+    <SDKContext.Provider value={guestSdk}>
+      <VideoRoom roomId={room.id} guestToken={token} displayName={name.trim()} learnerEmail={email.trim() || undefined} onLeft={() => setPhase("name")} />
+    </SDKContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <SDKContext.Provider value={sdk}>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Suspense fallback={null}><Landing /></Suspense>} />
+        <Route path="/app" element={<Home />} />
+        <Route path="/portal" element={<Suspense fallback={null}><ClientApp /></Suspense>} />
+        <Route path="/r/:id" element={<RoomPage />} />
+        <Route path="/guest/:token" element={<GuestPage />} />
+        <Route path="/recording-view" element={<Suspense fallback={null}><RecordingView /></Suspense>} />
+        <Route path="/admin" element={<Suspense fallback={null}><AdminApp /></Suspense>} />
+        <Route path="/embed" element={<EmbedPage />} />
+        <Route path="/documentation" element={<Suspense fallback={null}><Documentation /></Suspense>} />
+      </Routes>
+    </BrowserRouter>
+  </SDKContext.Provider>,
+);

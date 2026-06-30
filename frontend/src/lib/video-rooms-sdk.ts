@@ -1,0 +1,273 @@
+/**
+ * Video Rooms SDK — thin client for the FastAPI backend.
+ *
+ * Usage in a host app:
+ *   const sdk = createVideoRoomsSDK({
+ *     apiBase: "https://your-backend",
+ *     wsBase:  "wss://your-backend",
+ *     headers: () => ({
+ *       "X-User-Id":   currentUser.id,
+ *       "X-User-Name": currentUser.name,
+ *       "X-User-Role": currentUser.role,
+ *     }),
+ *   });
+ */
+
+export type Headers = Record<string, string>;
+
+export interface SDKOptions {
+  apiBase: string;
+  wsBase?: string;
+  headers?: () => Headers;
+}
+
+export interface Room {
+  id: string;
+  room_id: string;
+  title: string;
+  description?: string | null;
+  owner_id: string;
+  status: string;
+  max_participants: number;
+  is_public: boolean;
+  auto_record: boolean;
+  lobby_enabled: boolean;
+  lobby_timer_title?: string | null;
+  lobby_timer_seconds: number;
+  lobby_bg_video?: string | null;
+  lobby_auto_admit: boolean;
+  guest_token?: string | null;
+  allow_camera: boolean;
+  allow_mic: boolean;
+  allow_screen_share: boolean;
+  allow_whiteboard_edit: boolean;
+  whiteboard_active: boolean;
+  recording_enabled: boolean;
+  recording_url?: string | null;
+  external_ref?: string | null;
+  scheduled_at?: string | null;
+  ended_at?: string | null;
+  created_at: string;
+}
+
+export interface GuestRoomInfo {
+  id: string;
+  title: string;
+  status: string;
+  lobby_enabled: boolean;
+  lobby_timer_title?: string | null;
+  lobby_timer_seconds: number;
+  lobby_bg_video?: string | null;
+  lobby_auto_admit: boolean;
+  branding?: Record<string, any>;
+  tenant_name?: string | null;
+}
+
+export interface TokenResponse {
+  token: string;
+  livekit_url: string;
+  identity: string;
+}
+
+export interface BreakoutMember { identity: string; display_name: string }
+export interface BreakoutGroup {
+  id: string;
+  name: string;
+  room_name: string;
+  position: number;
+  members: BreakoutMember[];
+}
+export interface BreakoutState {
+  open: boolean;
+  ends_at: string | null;
+  mode: "auto" | "manual" | "self";
+  groups: BreakoutGroup[];
+}
+export interface BreakoutToken {
+  token: string;
+  livekit_url: string;
+  identity: string;
+  room_name: string;
+  group_name: string;
+}
+
+export function createVideoRoomsSDK(opts: SDKOptions) {
+  const wsBase = opts.wsBase ?? opts.apiBase.replace(/^http/, "ws");
+
+  async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const res = await fetch(`${opts.apiBase}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.headers?.() ?? {}),
+        ...(init.headers ?? {}),
+      },
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return res.json();
+  }
+
+  return {
+    rooms: {
+      list: () => call<Room[]>("/api/rooms"),
+      get: (id: string) => call<Room>(`/api/rooms/${id}`),
+      byGuestToken: (token: string) =>
+        call<GuestRoomInfo>(`/api/rooms/by-guest-token/${token}`),
+      branding: (slug: string) =>
+        call<{ name: string | null; branding: Record<string, any> }>(`/api/rooms/branding/${slug}`),
+      publicInfo: (id: string) =>
+        call<{ title: string; branding: Record<string, any>; tenant_name: string | null }>(`/api/rooms/${id}/public`),
+      create: (body: Partial<Room>) =>
+        call<Room>("/api/rooms", { method: "POST", body: JSON.stringify(body) }),
+      end: (id: string) => call(`/api/rooms/${id}/end`, { method: "POST" }),
+      setPermissions: (id: string, target: string, perms: Record<string, boolean>) =>
+        call(`/api/rooms/${id}/participants/${target}/permissions`, {
+          method: "POST", body: JSON.stringify(perms),
+        }),
+      setRoomPermissions: (id: string, perms: Record<string, boolean>) =>
+        call(`/api/rooms/${id}/permissions`, { method: "PUT", body: JSON.stringify(perms) }),
+      scormProgress: (id: string) =>
+        call<{ scorm: boolean; since?: string; count?: number; students: any[] }>(`/api/rooms/${id}/scorm/progress`),
+      moderate: (id: string, action: string, target: Record<string, any>) =>
+        call(`/api/rooms/${id}/moderation/${action}`, {
+          method: "POST", body: JSON.stringify(target),
+        }),
+      syncBooking: (b: { external_ref: string; title: string; scheduled_at: string; owner_id: string; lobby_enabled?: boolean }) =>
+        call<Room>("/api/rooms/bookings/sync", { method: "POST", body: JSON.stringify(b) }),
+    },
+    token: {
+      issue: (body: { room_id: string; guest_token?: string; speaker_invite_id?: string; display_name?: string; email?: string }) =>
+        call<TokenResponse>("/api/token", { method: "POST", body: JSON.stringify(body) }),
+    },
+    chat: {
+      list: (roomId: string, channel?: string) =>
+        call<Array<{ id: string; sender_id: string; sender_name: string; message: string; channel?: string | null; created_at: string }>>(
+          `/api/rooms/${roomId}/chat${channel ? `?channel=${encodeURIComponent(channel)}` : ""}`,
+        ),
+      send: (roomId: string, message: string, sender_name?: string, channel?: string) =>
+        call(`/api/rooms/${roomId}/chat`, {
+          method: "POST", body: JSON.stringify({ message, sender_name, channel }),
+        }),
+    },
+    lobby: {
+      list: (roomId: string) => call<any[]>(`/api/rooms/${roomId}/lobby`),
+      join: (roomId: string, display_name: string, participant_type: "user" | "guest" | "speaker" = "user") =>
+        call(`/api/rooms/${roomId}/lobby/join`, {
+          method: "POST", body: JSON.stringify({ display_name, participant_type }),
+        }),
+      decide: (roomId: string, lobbyId: string, admit: boolean) =>
+        call(`/api/rooms/${roomId}/lobby/${lobbyId}/decision`, {
+          method: "POST", body: JSON.stringify({ admit }),
+        }),
+    },
+    invites: {
+      createSpeaker: (roomId: string, body: any) =>
+        call(`/api/rooms/${roomId}/invites/speaker`, {
+          method: "POST", body: JSON.stringify(body),
+        }),
+      list: (roomId: string) => call<any[]>(`/api/rooms/${roomId}/invites`),
+      revokeSpeaker: (roomId: string, inviteId: string) =>
+        call(`/api/rooms/${roomId}/invites/speaker/${inviteId}`, { method: "DELETE" }),
+    },
+    whiteboard: {
+      get: (roomId: string) => call<{ id: string; state: any; updated_at: string }>(`/api/rooms/${roomId}/whiteboard`),
+      save: (roomId: string, state: any) =>
+        call(`/api/rooms/${roomId}/whiteboard`, { method: "PUT", body: JSON.stringify(state) }),
+      toggle: (roomId: string, active: boolean) =>
+        call(`/api/rooms/${roomId}/whiteboard/toggle`, {
+          method: "POST", body: JSON.stringify({ active }),
+        }),
+    },
+    backgrounds: {
+      list: () =>
+        call<Array<{ key: string; name: string; size: number; url: string }>>("/api/backgrounds"),
+      upload: async (file: File) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`${opts.apiBase}/api/backgrounds`, {
+          method: "POST",
+          headers: { ...(opts.headers?.() ?? {}) }, // no Content-Type → browser sets multipart boundary
+          body: fd,
+        });
+        if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+        return res.json() as Promise<{ key: string; name: string; url: string }>;
+      },
+    },
+    breakouts: {
+      state: (roomId: string) => call<BreakoutState>(`/api/rooms/${roomId}/breakouts`),
+      create: (roomId: string, body: { count: number; names?: string[]; mode: "auto" | "manual" | "self" }) =>
+        call<BreakoutState>(`/api/rooms/${roomId}/breakouts`, { method: "POST", body: JSON.stringify(body) }),
+      assign: (roomId: string, identity: string, group_id: string | null, display_name?: string) =>
+        call(`/api/rooms/${roomId}/breakouts/assign`, {
+          method: "POST", body: JSON.stringify({ identity, group_id, display_name }),
+        }),
+      open: (roomId: string, duration_seconds?: number) =>
+        call<BreakoutState>(`/api/rooms/${roomId}/breakouts/open`, {
+          method: "POST", body: JSON.stringify({ duration_seconds }),
+        }),
+      close: (roomId: string) =>
+        call(`/api/rooms/${roomId}/breakouts/close`, { method: "POST" }),
+      message: (roomId: string, text: string) =>
+        call(`/api/rooms/${roomId}/breakouts/message`, { method: "POST", body: JSON.stringify({ text }) }),
+      token: (roomId: string, group_id: string, identity: string, display_name?: string) =>
+        call<BreakoutToken>(`/api/rooms/${roomId}/breakouts/token`, {
+          method: "POST", body: JSON.stringify({ group_id, identity, display_name }),
+        }),
+    },
+    recording: {
+      start: (roomId: string) =>
+        call(`/api/rooms/${roomId}/recording/start`, { method: "POST" }),
+      stop: (roomId: string) =>
+        call(`/api/rooms/${roomId}/recording/stop`, { method: "POST" }),
+      get: (roomId: string) =>
+        call<{ recording_enabled: boolean; progress: string | null; url: string | null }>(
+          `/api/rooms/${roomId}/recording`,
+        ),
+    },
+    /**
+     * WebSocket: subscribes to every room event (chat, lobby, whiteboard, moderation, recording).
+     * Returns an unsubscribe function.
+     */
+    subscribe(roomId: string, onEvent: (event: string, payload: any) => void): () => void {
+      const ws = new WebSocket(`${wsBase}/ws/rooms/${roomId}`);
+      ws.onmessage = (e) => {
+        try {
+          const { event, payload } = JSON.parse(e.data);
+          onEvent(event, payload);
+        } catch {}
+      };
+      return () => ws.close();
+    },
+
+    /**
+     * Bidirectional channel: like subscribe(), but also lets the client SEND
+     * events that the backend relays to everyone else in the room (exclude=sender).
+     * Used for low-latency whiteboard deltas. Messages sent before the socket
+     * opens are queued.
+     */
+    connect(
+      roomId: string,
+      onEvent: (event: string, payload: any) => void,
+    ): { send: (event: string, payload: any) => void; close: () => void } {
+      const ws = new WebSocket(`${wsBase}/ws/rooms/${roomId}`);
+      const queue: string[] = [];
+      ws.onopen = () => { queue.forEach((m) => ws.send(m)); queue.length = 0; };
+      ws.onmessage = (e) => {
+        try {
+          const { event, payload } = JSON.parse(e.data);
+          onEvent(event, payload);
+        } catch {}
+      };
+      return {
+        send(event: string, payload: any) {
+          const m = JSON.stringify({ event, payload });
+          if (ws.readyState === WebSocket.OPEN) ws.send(m);
+          else queue.push(m);
+        },
+        close() { ws.close(); },
+      };
+    },
+  };
+}
+
+export type VideoRoomsSDK = ReturnType<typeof createVideoRoomsSDK>;

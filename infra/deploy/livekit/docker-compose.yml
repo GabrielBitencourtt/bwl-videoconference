@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    network_mode: host
+    command: redis-server --bind 0.0.0.0 --requirepass ${REDIS_PASSWORD} --save 60 1
+    volumes:
+      - /opt/bwl/redis_data:/data
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [redis]
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - /opt/bwl/caddy_data:/data
+      - /opt/bwl/caddy_config:/config

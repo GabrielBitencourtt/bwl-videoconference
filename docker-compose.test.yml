@@ -1,0 +1,30 @@
+# Isolated test stack: throwaway Postgres + pytest in the backend image.
+# Run:  docker compose -f docker-compose.test.yml run --build --rm tests
+services:
+  testdb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  tests:
+    build: ./backend
+    depends_on:
+      testdb:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql://postgres:postgres@testdb:5432/test
+      LIVEKIT_API_KEY: testkey
+      LIVEKIT_API_SECRET: testsecrettestsecrettestsecret12
+      ADMIN_JWT_SECRET: test-admin-secret
+    working_dir: /app
+    volumes:
+      - ./backend/tests:/app/tests
+    command: sh -c "pip install --no-cache-dir pytest==8.3.3 pytest-asyncio==0.24.0 >/dev/null && pytest -q -o asyncio_mode=auto tests"

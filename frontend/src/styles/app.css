@@ -1,0 +1,167 @@
+/* ============================================================
+   Global app theme — Home, name gate, guest pages.
+   Shares the same --brand-* / surface tokens as room.css
+   so the whole product is white-label ready.
+   ============================================================ */
+:root {
+  --brand-accent: #6366f1;
+  --brand-accent-hover: #818cf8;
+  --app-bg: #0b0d12;
+  --app-surface: #14171f;
+  --app-surface-2: #1c2029;
+  --app-border: #262b36;
+  --app-text: #e7e9ee;
+  --app-text-dim: #9aa1ad;
+  --app-radius: 14px;
+  --app-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 700px at 50% -15%, #161a24 0%, var(--app-bg) 55%);
+  color: var(--app-text);
+  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.app-shell { min-height: 100%; display: flex; flex-direction: column; }
+.app-center { align-items: center; justify-content: center; }
+
+/* ---------- Top bar ---------- */
+.app-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 28px; border-bottom: 1px solid var(--app-border);
+}
+.app-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.app-logo {
+  width: 30px; height: 30px; border-radius: 9px; color: #fff; font-weight: 700;
+  background: linear-gradient(135deg, var(--brand-accent), var(--brand-accent-hover));
+  display: grid; place-items: center;
+}
+.app-logo-lg { width: 48px; height: 48px; border-radius: 14px; font-size: 22px; margin: 0 auto; }
+.app-logo-img { background: none !important; object-fit: contain; }
+.app-user { display: flex; align-items: center; gap: 10px; color: var(--app-text-dim); font-size: 14px; }
+.app-avatar {
+  width: 34px; height: 34px; border-radius: 50%; background: var(--app-surface-2);
+  display: grid; place-items: center; font-weight: 600; color: var(--app-text);
+}
+
+/* ---------- Main ---------- */
+.app-main { width: min(760px, 92%); margin: 0 auto; padding: 40px 0 60px; flex: 1; }
+.app-hero { margin-bottom: 24px; }
+.app-hero h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; }
+.app-sub { margin: 0; color: var(--app-text-dim); font-size: 15px; }
+
+.app-card {
+  background: var(--app-surface); border: 1px solid var(--app-border);
+  border-radius: var(--app-radius); box-shadow: var(--app-shadow);
+}
+.app-create { padding: 18px; }
+.app-create form { display: flex; gap: 10px; }
+
+.app-input {
+  flex: 1; background: var(--app-bg); border: 1px solid var(--app-border);
+  color: var(--app-text); border-radius: 10px; padding: 12px 14px; font-size: 15px; outline: none;
+}
+.app-input:focus { border-color: var(--brand-accent); }
+.app-input::placeholder { color: var(--app-text-dim); }
+
+.app-btn {
+  background: var(--brand-accent); color: #fff; border: none; border-radius: 10px;
+  padding: 12px 20px; font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background .15s, transform .05s;
+}
+.app-btn:hover { background: var(--brand-accent-hover); }
+.app-btn:active { transform: scale(.98); }
+
+.app-section-title { font-size: 14px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--app-text-dim); margin: 32px 0 12px; }
+
+.app-room-list { display: flex; flex-direction: column; gap: 8px; }
+.app-room {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; background: var(--app-surface); border: 1px solid var(--app-border);
+  border-radius: 12px; text-decoration: none; color: var(--app-text); transition: border-color .15s, background .15s;
+}
+.app-room:hover { border-color: var(--brand-accent); background: var(--app-surface-2); }
+.app-room-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; text-decoration: none; color: var(--app-text); }
+.app-room-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.app-end {
+  background: none; border: 1px solid var(--app-border); color: var(--app-text-dim);
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.app-end:hover { border-color: #ef4444; color: #f87171; }
+.app-rec {
+  background: rgba(99, 102, 241, .12); border: 1px solid var(--brand-accent);
+  color: var(--brand-accent-hover); border-radius: 8px; padding: 6px 12px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.app-rec:hover { background: var(--brand-accent); color: #fff; }
+.app-room-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-room-date { font-size: 12px; color: var(--app-text-dim); }
+.app-badge {
+  font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+  background: rgba(99, 102, 241, .15); color: var(--brand-accent-hover);
+}
+.app-badge[data-status="ended"] { background: rgba(154, 161, 173, .15); color: var(--app-text-dim); }
+.app-empty { color: var(--app-text-dim); font-size: 14px; padding: 8px 0; }
+
+/* ---------- Topbar extras (authed app) ---------- */
+.app-lic-chip {
+  font-size: 12px; font-weight: 600; color: var(--app-text-dim);
+  background: var(--app-surface-2); border: 1px solid var(--app-border);
+  padding: 5px 11px; border-radius: 999px;
+}
+.app-navlink {
+  color: var(--app-text-dim); font-size: 14px; text-decoration: none; font-weight: 600;
+  background: none; border: none; cursor: pointer; padding: 0; font-family: inherit;
+}
+.app-navlink:hover { color: var(--app-text); }
+
+/* ---------- License stats strip ---------- */
+.app-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.app-stat {
+  background: var(--app-surface); border: 1px solid var(--app-border);
+  border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px;
+}
+.app-stat[data-warn="1"] { border-color: #ef4444; }
+.app-stat-v { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.app-stat-cap { font-size: 15px; font-weight: 600; color: var(--app-text-dim); }
+.app-stat-l { font-size: 12px; color: var(--app-text-dim); text-transform: uppercase; letter-spacing: .06em; }
+
+/* ---------- Create ---------- */
+.app-btn-create { width: 100%; padding: 15px; font-size: 16px; }
+.app-btn:disabled { opacity: .5; cursor: not-allowed; }
+.app-btn:disabled:hover { background: var(--brand-accent); }
+.app-limit-msg { color: #f87171; font-size: 13px; margin: 10px 2px 0; }
+
+/* ---------- List head + tabs ---------- */
+.app-list-head { display: flex; align-items: center; justify-content: space-between; margin: 32px 0 12px; }
+.app-list-head .app-section-title { margin: 0; }
+.app-tabs { display: flex; gap: 4px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 10px; padding: 3px; }
+.app-tab {
+  background: none; border: none; color: var(--app-text-dim); font-size: 13px; font-weight: 600;
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; font-family: inherit;
+}
+.app-tab[data-active="true"] { background: var(--brand-accent); color: #fff; }
+
+/* ---------- Join button ---------- */
+.app-join {
+  background: var(--brand-accent); color: #fff; border-radius: 8px; padding: 6px 14px;
+  font-size: 13px; font-weight: 600; text-decoration: none; transition: background .15s;
+}
+.app-join:hover { background: var(--brand-accent-hover); }
+
+@media (max-width: 640px) {
+  .app-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- Gate / guest card ---------- */
+.app-gate {
+  width: min(420px, 92%); padding: 28px; display: flex; flex-direction: column; gap: 14px; text-align: center;
+}
+.app-gate h1 { margin: 4px 0 0; font-size: 22px; }
+.app-gate form { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.app-gate .app-btn { width: 100%; }

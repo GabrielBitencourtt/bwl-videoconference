@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: video_rooms
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./backend/app/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d video_rooms"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend.env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend-build:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      VITE_API_BASE: https://video.openpbl.ai
+      VITE_WS_BASE: wss://video.openpbl.ai
+    volumes:
+      - ./frontend:/app
+      - frontend_dist:/out
+    command: sh -c "npm install && npm run build && rm -rf /out/* && cp -r dist/* /out/ && echo BUILD_DONE"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - frontend_dist:/srv
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend-build:
+        condition: service_completed_successfully
+
+volumes:
+  db_data:
+  frontend_dist:
+  caddy_data:
+  caddy_config:
