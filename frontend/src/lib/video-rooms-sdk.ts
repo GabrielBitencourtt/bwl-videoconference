@@ -234,8 +234,13 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
        *  + badge de registrado. Público — todo cliente da sala faz polling. */
       roster: (roomId: string) =>
-        call<{ code: string | null; checking_open: boolean | null; students: OpenPblRosterEntry[] }>(
+        call<{ code: string | null; checking_open: boolean | null; code_hidden: boolean; students: OpenPblRosterEntry[] }>(
           `/api/rooms/${roomId}/openpbl/roster`),
+      /** Facilitador oculta/reexibe o card do class-code para todos. */
+      setCodeVisible: (roomId: string, hidden: boolean) =>
+        call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/code-visibility`, {
+          method: "POST", body: JSON.stringify({ hidden }),
+        }),
       chat: {
         conversations: (roomId: string) =>
           call<any[]>(`/api/rooms/${roomId}/openpbl/chat/conversations`),

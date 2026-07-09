@@ -715,11 +715,11 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity }: { roster: 
   );
 }
 
-/** Header do painel (OpenPBL): câmera do facilitador destacada + card do class-code. */
+/** Header do painel (OpenPBL): câmera do facilitador destacada + card do class-code.
+ *  O facilitador pode ocultar/reexibir o código (sincronizado p/ todos). */
 function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; roomId: string }) {
   const sdk = useSDK();
   const [expand, setExpand] = useState(false);
-  const [sent, setSent] = useState(false);
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
 
   const byId: Record<string, any> = {};
@@ -728,28 +728,36 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
   const hostTrack = tracks.find((t) => isHostTile(t.participant.identity));
   const code: string | null = roster?.code ?? null;
+  const hidden = !!roster?.code_hidden;
+  const isHost = localIsStaff;
 
-  const sendCode = () => {
-    if (!code) return;
-    sdk.chat.send(roomId, `📋 Código da sessão: ${code} — digite no seu pacote OpenPBL para registrar presença.`).catch(() => {});
-    setSent(true); setTimeout(() => setSent(false), 2500);
-  };
+  const toggle = () => sdk.openpbl.setCodeVisible(roomId, !hidden).catch(() => {});
+  const showCard = !!code && !hidden;
 
   if (!hostTrack && !code) return null;
   return (
-    <div className="vr-pbl-head">
+    <div className="vr-pbl-head" data-wide={showCard ? undefined : "1"}>
       {hostTrack && <div className="vr-pbl-head-cam"><ParticipantTile trackRef={hostTrack} /></div>}
-      {code && (
+
+      {showCard && (
         <div className="vr-pbl-code-card">
           <div className="vr-pbl-code-top">
             <span className="vr-pbl-code-label">Class code</span>
-            <button className="vr-pbl-code-exp" onClick={() => setExpand(true)} title="Ampliar">⛶</button>
+            <div className="vr-pbl-code-tools">
+              {isHost && <button className="vr-pbl-code-ico" onClick={toggle} title="Ocultar o código para todos">🙈</button>}
+              <button className="vr-pbl-code-ico" onClick={() => setExpand(true)} title="Ampliar">⛶</button>
+            </div>
           </div>
           <span className="vr-pbl-code">{code}</span>
           {roster?.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
-          <button className="vr-pbl-code-send" onClick={sendCode}>{sent ? "Enviado ✓" : "Enviar no chat"}</button>
         </div>
       )}
+
+      {/* Oculto: só o facilitador vê o botão de reexibir para todos */}
+      {code && hidden && isHost && (
+        <button className="vr-pbl-code-show" onClick={toggle} title="Reexibir o código para todos">👁 Mostrar class code</button>
+      )}
+
       {expand && code && (
         <div className="vr-sheet-backdrop" onClick={() => setExpand(false)}>
           <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>

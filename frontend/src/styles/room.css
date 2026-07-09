@@ -583,27 +583,32 @@
 .vr-stage[data-pbl="1"] { flex-direction: row-reverse; }
 
 /* Header do painel: câmera do facilitador destacada + card do class-code */
-.vr-pbl-head { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); }
+.vr-pbl-head { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); align-items: stretch; }
 .vr-pbl-head-cam {
-  flex: 1; min-width: 0; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden;
-  background: #000; border: 2px solid var(--brand-accent);
+  flex: 1.5; min-width: 0; min-height: 128px; aspect-ratio: 16 / 10;
+  border-radius: 10px; overflow: hidden; background: #000; border: 2px solid var(--brand-accent);
 }
+/* Código oculto → a câmera ocupa o header inteiro (fica maior). */
+.vr-pbl-head[data-wide="1"] .vr-pbl-head-cam { flex: 1; min-height: 160px; }
 .vr-pbl-head-cam .lk-participant-tile { width: 100%; height: 100%; }
 .vr-pbl-code-card {
   flex: 1; min-width: 0; background: #fff; color: #111; border-radius: 12px; padding: 10px 12px;
   display: flex; flex-direction: column; gap: 4px; box-shadow: var(--vr-shadow);
 }
 .vr-pbl-code-top { display: flex; align-items: center; justify-content: space-between; }
+.vr-pbl-code-tools { display: flex; align-items: center; gap: 6px; }
 .vr-pbl-code-label { font-size: 12px; color: #666; font-weight: 600; }
-.vr-pbl-code-exp { background: none; border: none; color: #666; cursor: pointer; font-size: 13px; padding: 0 2px; }
-.vr-pbl-code-exp:hover { color: #111; }
+.vr-pbl-code-ico { background: none; border: none; color: #666; cursor: pointer; font-size: 13px; padding: 0 2px; line-height: 1; }
+.vr-pbl-code-ico:hover { color: #111; }
 .vr-pbl-code { font-size: 24px; font-weight: 800; letter-spacing: 2px; font-family: ui-monospace, monospace; }
 .vr-pbl-code-closed { font-size: 11px; color: var(--vr-danger); font-weight: 700; }
-.vr-pbl-code-send {
-  margin-top: 2px; background: var(--brand-accent); color: #fff; border: none; border-radius: 8px;
-  padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+/* Botão "Mostrar class code" (só o facilitador vê quando oculto) */
+.vr-pbl-code-show {
+  flex: 0 0 auto; align-self: center; background: var(--vr-surface-2); color: var(--vr-text);
+  border: 1px solid var(--vr-border); border-radius: 8px; padding: 8px 12px;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
-.vr-pbl-code-send:hover { background: var(--brand-accent-hover); }
+.vr-pbl-code-show:hover { border-color: var(--brand-accent); }
 
 /* Class-code ampliado (popup) */
 .vr-pbl-code-big {

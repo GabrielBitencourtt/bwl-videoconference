@@ -79,6 +79,7 @@ def _row_to_state(row) -> dict:
         "checking_open": row["checking_open"],
         "released_dimensions": row["released_dimensions"],
         "released": row["released"],
+        "code_hidden": row["code_hidden"],
     }
 
 
@@ -312,10 +313,31 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
     out = {
         "code": cls["presentation_code"] if cls else None,
         "checking_open": cls["checking_open"] if cls else None,
+        "code_hidden": cls["code_hidden"] if cls else False,
         "students": students,
     }
     _roster_cache[room_id] = (now, out)
     return out
+
+
+class CodeVisibility(BaseModel):
+    hidden: bool
+
+
+@router.post("/{room_id}/openpbl/code-visibility")
+async def set_code_visibility(room_id: str, body: CodeVisibility, user: CurrentUser = Depends(get_current_user)):
+    """Facilitador oculta/reexibe o card do class-code para todos."""
+    await _require_host(user)
+    row = await _get_class(room_id)
+    if not row:
+        raise HTTPException(404, "aula OpenPBL não iniciada nesta sala")
+    await pool().execute(
+        "UPDATE video_room_openpbl_class SET code_hidden=$2 WHERE room_id=$1", room_id, body.hidden)
+    _roster_cache.pop(room_id, None)   # invalida o cache p/ refletir na hora
+    row = await _get_class(room_id)
+    state = _row_to_state(row)
+    await hub.broadcast(room_id, "openpbl-class", state)
+    return state
 
 
 # ── chat do facilitador (proxy do painel do professor) ────────────────────
