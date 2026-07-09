@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from fastapi import APIRouter, HTTPException, Depends
 from ..config import settings
@@ -60,7 +61,15 @@ async def issue_token(
             raise HTTPException(403, "invalid guest token")
         if not body.display_name:
             raise HTTPException(400, "display_name required")
-        identity = f"guest_{secrets.token_hex(4)}"
+        # Identity ESTÁVEL por e-mail: o aluno que cair e voltar mantém o mesmo
+        # identity → sua atribuição de grupo (persistida) continua válida e o
+        # rejoin ao grupo funciona (salas OpenPBL têm require_email). Sem e-mail
+        # cai no aleatório (sem como persistir).
+        _email = (body.email or "").strip().lower()
+        if _email:
+            identity = "guest_" + hashlib.sha256(_email.encode()).hexdigest()[:12]
+        else:
+            identity = f"guest_{secrets.token_hex(4)}"
         tok = create_token(
             room_name=room["room_id"], identity=identity,
             display_name=body.display_name, is_admin=False,
