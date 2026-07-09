@@ -710,10 +710,17 @@ function presentationPost(type: "next" | "prev") {
  *  com a identidade do facilitador; `presenterOnly=1` = só os slides, sem gerar
  *  código (a webconf faz isso) e aceitando o ▶ da webconf. Preenche o container. */
 function PresentationFrame({ activityId, email, name }: { activityId: string; email?: string; name?: string }) {
-  const q = new URLSearchParams({ profile: "facilitador", presenterOnly: "1" });
-  if (email) q.set("email", email);
+  // /Invite/{activityId} resolve activityId→courseId no play (nativo). Passa a
+  // identidade do facilitador (nome/e-mail já conhecidos) para o site.js do play2
+  // auto-preencher/pular o form, e presenterOnly=1 pro pacote rodar em modo
+  // apresentação (sem gerar código; aceita o ▶). profile=aluno = só os slides.
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  const first = parts[0] || "Facilitador";
+  const last = parts.slice(1).join(" ") || first;
+  const q = new URLSearchParams({ profile: "aluno", presenterOnly: "1", firstName: first, lastName: last });
   if (name) q.set("name", name);
-  const src = `${OPENPBL_PLAY_BASE}/LaunchCourse/${encodeURIComponent(activityId)}?${q.toString()}`;
+  if (email) q.set("email", email);
+  const src = `${OPENPBL_PLAY_BASE}/Invite/${encodeURIComponent(activityId)}?${q.toString()}`;
   return (
     <iframe id="openpbl-presentation" className="vr-present-iframe" title="Apresentação OpenPBL" src={src}
       allow="autoplay; fullscreen; microphone; camera" />
