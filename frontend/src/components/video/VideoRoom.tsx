@@ -566,7 +566,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       <div className="vr-stage" data-pbl={scorm ? "1" : undefined}>
         <div className="vr-grid-wrap">
           {scorm
-            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
+            ? (isStaff && pblRoster?.activity_id
+                ? <div className="vr-pbl-main">
+                    <div className="vr-pbl-present-big">
+                      <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+                    </div>
+                    <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} strip />
+                  </div>
+                : <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />)
             : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
@@ -599,7 +606,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
             {scorm && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
-            {scorm && pblRoster?.activity_id && <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -700,19 +706,17 @@ function presentationPost(type: "next" | "prev") {
   f?.contentWindow?.postMessage({ source: "bwl-webconf", type }, "*");
 }
 
-/** Apresentação OpenPBL embutida (coluna esquerda). Lança direto (sem formulário)
+/** Apresentação OpenPBL embutida (área principal). Lança direto (sem formulário)
  *  com a identidade do facilitador; `presenterOnly=1` = só os slides, sem gerar
- *  código (a webconf faz isso) e aceitando o ▶ da webconf. */
+ *  código (a webconf faz isso) e aceitando o ▶ da webconf. Preenche o container. */
 function PresentationFrame({ activityId, email, name }: { activityId: string; email?: string; name?: string }) {
   const q = new URLSearchParams({ profile: "facilitador", presenterOnly: "1" });
   if (email) q.set("email", email);
   if (name) q.set("name", name);
   const src = `${OPENPBL_PLAY_BASE}/LaunchCourse/${encodeURIComponent(activityId)}?${q.toString()}`;
   return (
-    <div className="vr-pbl-present">
-      <iframe id="openpbl-presentation" title="Apresentação OpenPBL" src={src}
-        allow="autoplay; fullscreen; microphone; camera" />
-    </div>
+    <iframe id="openpbl-presentation" className="vr-present-iframe" title="Apresentação OpenPBL" src={src}
+      allow="autoplay; fullscreen; microphone; camera" />
   );
 }
 
@@ -734,14 +738,14 @@ function ActivityBar({ label, onNext }: { label: string; onNext: () => void }) {
 /** Grade dos ALUNOS (área principal, à direita) com borda de status:
  *  🟢 dentro do pacote · 🔴 fora · badge ✓ = registrou presença com o class-code.
  *  O facilitador e o código ficam no header do painel (PblPanelHeader). */
-function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity }: { roster: any | null; localIsStaff: boolean; localIdentity?: string }) {
+function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; strip?: boolean }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
   );
 
-  // Compartilhamento de tela em spotlight, sobrepondo o layout.
-  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
+  // Compartilhamento de tela em spotlight, sobrepondo o layout (só no modo grade).
+  const screen = !strip && tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
   if (screen) {
     const sharerCam = tracks.find(
       (t) => t.source === Track.Source.Camera && t.participant.identity === screen.participant.identity,
@@ -762,7 +766,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity }: { roster: 
   const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity));
 
   return (
-    <div className="vr-pbl-students">
+    <div className={strip ? "vr-pbl-students vr-pbl-students--strip" : "vr-pbl-students"}>
       {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
       {studentTiles.map((t) => {
         const st = byId[t.participant.identity];

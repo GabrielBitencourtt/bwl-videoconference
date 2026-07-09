@@ -664,12 +664,17 @@
 .vr-actbar-next:hover { background: #16a34a; }
 .vr-actbar-next svg { width: 20px; height: 20px; }
 
-/* Apresentação embutida (coluna esquerda, no painel scorm) */
-.vr-pbl-present { padding: 0 10px 10px; }
-.vr-pbl-present iframe {
-  width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--vr-border);
-  border-radius: 10px; background: #fff; display: block;
+/* Área principal OpenPBL: apresentação GRANDE em cima + faixa de alunos embaixo */
+.vr-pbl-main { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; }
+.vr-pbl-present-big {
+  flex: 1; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
+  background: #fff; box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
 }
-/* Painel mais largo no modo OpenPBL, para a apresentação caber legível */
-.vr-stage[data-pbl="1"] .vr-panel { width: 420px; }
-@media (max-width: 900px) { .vr-stage[data-pbl="1"] .vr-panel { width: 340px; } }
+.vr-present-iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
+/* Faixa de alunos (monitor) abaixo da apresentação */
+.vr-pbl-students--strip {
+  flex: 0 0 auto; height: 128px; display: flex; grid-template-columns: none;
+  overflow-x: auto; overflow-y: hidden; gap: 8px;
+}
+.vr-pbl-students--strip .vr-pbl-tile { flex: 0 0 auto; width: 200px; aspect-ratio: 16 / 10; }
+.vr-pbl-students--strip .vr-pbl-empty { display: grid; place-items: center; width: 100%; }
