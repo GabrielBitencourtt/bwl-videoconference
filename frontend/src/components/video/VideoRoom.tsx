@@ -599,7 +599,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
             {scorm && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
-            {scorm && pblRoster?.activity_id && <PresentationFrame activityId={pblRoster.activity_id} />}
+            {scorm && pblRoster?.activity_id && <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -700,9 +700,14 @@ function presentationPost(type: "next" | "prev") {
   f?.contentWindow?.postMessage({ source: "bwl-webconf", type }, "*");
 }
 
-/** Apresentação OpenPBL embutida (coluna esquerda). */
-function PresentationFrame({ activityId }: { activityId: string }) {
-  const src = `${OPENPBL_PLAY_BASE}/Invite/${encodeURIComponent(activityId)}?profile=facilitador`;
+/** Apresentação OpenPBL embutida (coluna esquerda). Lança direto (sem formulário)
+ *  com a identidade do facilitador; `presenterOnly=1` = só os slides, sem gerar
+ *  código (a webconf faz isso) e aceitando o ▶ da webconf. */
+function PresentationFrame({ activityId, email, name }: { activityId: string; email?: string; name?: string }) {
+  const q = new URLSearchParams({ profile: "facilitador", presenterOnly: "1" });
+  if (email) q.set("email", email);
+  if (name) q.set("name", name);
+  const src = `${OPENPBL_PLAY_BASE}/LaunchCourse/${encodeURIComponent(activityId)}?${q.toString()}`;
   return (
     <div className="vr-pbl-present">
       <iframe id="openpbl-presentation" title="Apresentação OpenPBL" src={src}

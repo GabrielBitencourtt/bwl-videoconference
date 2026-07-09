@@ -313,6 +313,8 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
     out = {
         "code": cls["presentation_code"] if cls else None,
         "activity_id": cls["activity_id"] if cls else None,
+        "facilitator_email": cls["facilitator_email"] if cls else None,
+        "facilitator_name": cls["facilitator_name"] if cls else None,
         "checking_open": cls["checking_open"] if cls else None,
         "code_hidden": cls["code_hidden"] if cls else False,
         "students": students,

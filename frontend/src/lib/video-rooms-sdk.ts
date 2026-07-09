@@ -234,7 +234,7 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
        *  + badge de registrado. Público — todo cliente da sala faz polling. */
       roster: (roomId: string) =>
-        call<{ code: string | null; activity_id: string | null; checking_open: boolean | null; code_hidden: boolean; students: OpenPblRosterEntry[] }>(
+        call<{ code: string | null; activity_id: string | null; facilitator_email: string | null; facilitator_name: string | null; checking_open: boolean | null; code_hidden: boolean; students: OpenPblRosterEntry[] }>(
           `/api/rooms/${roomId}/openpbl/roster`),
       /** Facilitador oculta/reexibe o card do class-code para todos. */
       setCodeVisible: (roomId: string, hidden: boolean) =>
