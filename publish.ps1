@@ -79,7 +79,10 @@ $excludes = @(
     '--exclude=__pycache__', '--exclude=.venv', '--exclude=*.pyc'
 )
 Write-Host 'Empacotando source...' -ForegroundColor Cyan
-tar czf $tar @excludes @parts
+# Monta os argumentos num array e passa expandido — o splat `@` do PS 5.1 nao
+# expande arrays de forma confiavel para executaveis nativos (gera args vazios).
+$tarArgs = @('czf', $tar) + $excludes + $parts
+tar $tarArgs
 if ($LASTEXITCODE -ne 0) { Fail 'falha ao empacotar (tar).' }
 
 Write-Host 'Enviando para a Lightsail...' -ForegroundColor Cyan
