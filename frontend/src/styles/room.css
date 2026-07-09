@@ -646,3 +646,30 @@
   .vr-pbl-code-huge { font-size: 48px; }
   .vr-pbl-code-big { padding: 28px 32px; }
 }
+
+/* ===================== Barra "Próxima atividade" + apresentação ===================== */
+.vr-actbar {
+  display: flex; align-items: center; gap: 12px; align-self: center;
+  margin: 0 12px 8px; padding: 6px 8px 6px 16px;
+  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 12px;
+  box-shadow: var(--vr-shadow);
+}
+.vr-actbar-info { display: flex; flex-direction: column; line-height: 1.15; }
+.vr-actbar-cap { font-size: 10px; color: var(--vr-text-dim); font-weight: 600; }
+.vr-actbar-name { font-size: 14px; font-weight: 700; color: var(--vr-text); }
+.vr-actbar-next {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+  background: #22c55e; border: none; color: #fff; cursor: pointer;
+}
+.vr-actbar-next:hover { background: #16a34a; }
+.vr-actbar-next svg { width: 20px; height: 20px; }
+
+/* Apresentação embutida (coluna esquerda, no painel scorm) */
+.vr-pbl-present { padding: 0 10px 10px; }
+.vr-pbl-present iframe {
+  width: 100%; aspect-ratio: 4 / 3; border: 1px solid var(--vr-border);
+  border-radius: 10px; background: #fff; display: block;
+}
+/* Painel mais largo no modo OpenPBL, para a apresentação caber legível */
+.vr-stage[data-pbl="1"] .vr-panel { width: 420px; }
+@media (max-width: 900px) { .vr-stage[data-pbl="1"] .vr-panel { width: 340px; } }

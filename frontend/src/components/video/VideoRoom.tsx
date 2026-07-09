@@ -63,6 +63,7 @@ const I = {
   eye: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
   eyeOff: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
   expand: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>,
+  playTri: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
 };
 
@@ -426,6 +427,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
   const [pblRoster, setPblRoster] = useState<any | null>(null);   // status dos alunos (OpenPBL)
+  const [pblStep, setPblStep] = useState<string>("");             // etapa atual (reportada pelo pacote)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -468,6 +470,18 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         setBoardEdit(payload.allow_whiteboard_edit);
     });
   }, [roomId, identity]);
+
+  // A apresentação embutida (pacote) reporta a etapa atual via postMessage.
+  useEffect(() => {
+    if (!scorm) return;
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data;
+      if (d && d.source === "openpbl-package" && d.type === "step" && typeof d.label === "string")
+        setPblStep(d.label);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [scorm]);
 
   // OpenPBL: roster (bordas de status dos alunos + código) — só em salas scorm.
   useEffect(() => {
@@ -534,6 +548,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         </div>
       </header>
 
+      {scorm && isStaff && pblRoster?.activity_id && (
+        <ActivityBar label={pblStep} onNext={() => presentationPost("next")} />
+      )}
+
       {breakout.isStaff
         ? <BreakoutHostBar roomId={roomId} active={breakout.active} message={breakout.message} onEnter={breakout.enter} onLeave={breakout.leave} />
         : (breakout.active || breakout.message) && (
@@ -581,6 +599,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
             {scorm && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
+            {scorm && pblRoster?.activity_id && <PresentationFrame activityId={pblRoster.activity_id} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -669,6 +688,41 @@ function VideoGrid() {
     <GridLayout tracks={cams} style={{ height: "100%" }}>
       <ParticipantTile />
     </GridLayout>
+  );
+}
+
+/* Base do launcher OpenPBL (play2). A apresentação é embutida por Invite. */
+const OPENPBL_PLAY_BASE = "https://play2.openpbl.ai";
+
+/** Envia comando à apresentação embutida (ponte postMessage — o pacote escuta). */
+function presentationPost(type: "next" | "prev") {
+  const f = document.getElementById("openpbl-presentation") as HTMLIFrameElement | null;
+  f?.contentWindow?.postMessage({ source: "bwl-webconf", type }, "*");
+}
+
+/** Apresentação OpenPBL embutida (coluna esquerda). */
+function PresentationFrame({ activityId }: { activityId: string }) {
+  const src = `${OPENPBL_PLAY_BASE}/Invite/${encodeURIComponent(activityId)}?profile=facilitador`;
+  return (
+    <div className="vr-pbl-present">
+      <iframe id="openpbl-presentation" title="Apresentação OpenPBL" src={src}
+        allow="autoplay; fullscreen; microphone; camera" />
+    </div>
+  );
+}
+
+/** Barra "Próxima atividade ▶" (topo) — só o facilitador avança a apresentação. */
+function ActivityBar({ label, onNext }: { label: string; onNext: () => void }) {
+  return (
+    <div className="vr-actbar">
+      <div className="vr-actbar-info">
+        <span className="vr-actbar-cap">Próxima atividade</span>
+        <span className="vr-actbar-name">{label || "Apresentação"}</span>
+      </div>
+      <button className="vr-actbar-next" onClick={onNext} title="Avançar a apresentação">
+        {I.playTri}
+      </button>
+    </div>
   );
 }
 
