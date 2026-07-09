@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .db import init_pool, close_pool, pool
 from . import logbuffer
-from .routers import rooms, token, chat, lobby, invites, whiteboard, recording, ws, backgrounds, admin, internal, client, breakouts
+from .routers import rooms, token, chat, lobby, invites, whiteboard, recording, ws, backgrounds, admin, internal, client, breakouts, openpbl_class
 
 APP_VERSION = "1.0.0"
 
@@ -61,6 +61,7 @@ async def observability(request: Request, call_next):
 
 app.include_router(rooms.router)
 app.include_router(breakouts.router)
+app.include_router(openpbl_class.router)
 app.include_router(token.router)
 app.include_router(chat.router)
 app.include_router(lobby.router)

@@ -39,5 +39,14 @@ class Settings(BaseSettings):
     scorm_lrs_url: str = "https://ltiserver.openpbl.ai"   # GET /interaction-events
     scorm_tenant_slugs: str = "openpbl"    # tenants (slug, csv) que têm a integração ativa
 
+    # Aula OpenPBL ao vivo (class-code, liberação de questionários, encerrar
+    # registro, chat do facilitador). A webconf replica as chamadas que o pacote
+    # PRESENTATION faz. Chaves ficam em env (backend.env no servidor) — nunca no repo.
+    openpbl_integration_url: str = "https://integration.openpbl.ai"
+    openpbl_integration_apikey: str = ""       # header `apikey` (ContentBuilder)
+    openpbl_chat_url: str = "https://chat.openpbl.ai"
+    openpbl_chat_user: str = ""                # HTTP Basic do painel do professor
+    openpbl_chat_pass: str = ""
+
 
 settings = Settings()

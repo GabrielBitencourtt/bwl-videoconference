@@ -523,3 +523,56 @@
   box-shadow: var(--vr-shadow); animation: vr-pulse 1.8s infinite;
 }
 .vr-audio-gate:hover { filter: brightness(1.05); }
+
+/* ===================== Aula OpenPBL (class-code ao vivo) ===================== */
+.vr-class-ctl, .vr-fchat {
+  background: var(--vr-surface-2); border: 1px solid var(--vr-border);
+  border-radius: 10px; padding: 12px; margin: 12px 12px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.vr-class-head { font-size: 13px; font-weight: 700; color: var(--vr-text); }
+.vr-class-code-box {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--vr-surface); border: 1px solid var(--vr-border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.vr-class-code-label { font-size: 11px; color: var(--vr-text-dim); font-weight: 600; }
+.vr-class-code {
+  font-size: 22px; font-weight: 800; letter-spacing: 2px;
+  color: var(--brand-accent-hover); font-family: ui-monospace, monospace;
+}
+.vr-class-actions { display: flex; flex-direction: column; gap: 6px; }
+.vr-class-btn {
+  background: var(--vr-surface); color: var(--vr-text); border: 1px solid var(--vr-border);
+  border-radius: 8px; padding: 9px 12px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left;
+}
+.vr-class-btn:hover:not(:disabled) { border-color: var(--brand-accent); }
+.vr-class-btn:disabled { cursor: default; opacity: .75; }
+.vr-class-btn[data-done="true"] { color: #34d399; border-color: rgba(52,211,153,.35); opacity: 1; }
+.vr-class-btn-danger:hover:not(:disabled) { border-color: var(--vr-danger); color: var(--vr-danger); }
+.vr-class-err { margin: 0; font-size: 12px; color: var(--vr-danger); }
+.vr-class-groups { display: flex; flex-direction: column; gap: 6px; }
+.vr-class-group-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.vr-class-group-chip {
+  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 999px;
+  padding: 3px 10px; font-size: 11px; font-family: ui-monospace, monospace; color: var(--vr-text-dim);
+}
+
+/* Chat do facilitador (alunos escrevem pelo pacote) */
+.vr-fchat-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.vr-fchat-conv {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; color: var(--vr-text); text-align: left;
+}
+.vr-fchat-conv:hover { border-color: var(--brand-accent); }
+.vr-fchat-name { font-size: 13px; font-weight: 600; }
+.vr-fchat-meta { font-size: 11px; color: var(--vr-text-dim); }
+.vr-fchat-thread { display: flex; flex-direction: column; gap: 8px; }
+.vr-fchat-thread-head { display: flex; align-items: center; gap: 10px; }
+.vr-fchat-msgs { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding: 4px 0; }
+.vr-fchat-msg {
+  max-width: 85%; padding: 7px 10px; border-radius: 10px; font-size: 13px;
+  background: var(--vr-surface); border: 1px solid var(--vr-border); align-self: flex-start;
+}
+.vr-fchat-msg[data-teacher="true"] { align-self: flex-end; background: var(--brand-accent); border: none; color: #fff; }

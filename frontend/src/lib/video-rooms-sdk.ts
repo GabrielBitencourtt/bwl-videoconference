@@ -69,6 +69,19 @@ export interface TokenResponse {
   identity: string;
 }
 
+export interface OpenPblClass {
+  active: boolean;
+  activity_id?: string;
+  presentation_code?: string;
+  class_course_id?: string;
+  group_codes?: string[];
+  facilitator_email?: string;
+  facilitator_name?: string;
+  checking_open?: boolean;
+  released_dimensions?: boolean;   // gate Riscos
+  released?: boolean;              // gate Percepções
+}
+
 export interface BreakoutMember { identity: string; display_name: string }
 export interface BreakoutGroup {
   id: string;
@@ -191,6 +204,33 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
         });
         if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
         return res.json() as Promise<{ key: string; name: string; url: string }>;
+      },
+    },
+    openpbl: {
+      /** Estado da aula OpenPBL da sala (class-code, gates, registro). */
+      classState: (roomId: string) => call<OpenPblClass>(`/api/rooms/${roomId}/openpbl`),
+      /** Gera o class-code + turma (replica o pacote PRESENTATION). */
+      startClass: (roomId: string, activity_id: string, facilitator_email?: string) =>
+        call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/start`, {
+          method: "POST", body: JSON.stringify({ activity_id, facilitator_email }),
+        }),
+      /** Libera questionário: "risks" (Riscos/dimensões) ou "perceptions" (Percepções). */
+      release: (roomId: string, gate: "risks" | "perceptions") =>
+        call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/release`, {
+          method: "POST", body: JSON.stringify({ gate }),
+        }),
+      closeRegistration: (roomId: string) =>
+        call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/close-registration`, { method: "POST" }),
+      groups: (roomId: string) => call<any[]>(`/api/rooms/${roomId}/openpbl/groups`),
+      chat: {
+        conversations: (roomId: string) =>
+          call<any[]>(`/api/rooms/${roomId}/openpbl/chat/conversations`),
+        messages: (roomId: string, convId: string) =>
+          call<any[]>(`/api/rooms/${roomId}/openpbl/chat/conversations/${convId}/messages`),
+        reply: (roomId: string, convId: string, content: string) =>
+          call(`/api/rooms/${roomId}/openpbl/chat/conversations/${convId}/reply`, {
+            method: "POST", body: JSON.stringify({ content }),
+          }),
       },
     },
     breakouts: {

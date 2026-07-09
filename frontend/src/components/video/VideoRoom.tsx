@@ -740,6 +740,174 @@ const SCORM_STATUS: Record<string, string> = {
   "nao-abriu": "não abriu", "erro": "—",
 };
 
+/** Aula OpenPBL ao vivo: gera o class-code aqui dentro (substitui o pacote
+ *  PRESENTATION do facilitador), libera questionários e encerra o registro. */
+function ClassControl({ roomId }: { roomId: string }) {
+  const sdk = useSDK();
+  const [cls, setCls] = useState<any | null>(null);
+  const [activityId, setActivityId] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [sentChat, setSentChat] = useState(false);
+
+  useEffect(() => {
+    sdk.openpbl.classState(roomId).then(setCls).catch(() => setCls({ active: false }));
+    return sdk.subscribe(roomId, (event, payload) => {
+      if (event === "openpbl-class") setCls(payload);
+    });
+  }, [roomId]);
+
+  const run = async (key: string, fn: () => Promise<any>) => {
+    setBusy(key); setErr(null);
+    try { setCls(await fn()); }
+    catch (e: any) { setErr(e?.message?.slice(0, 180) || "Falha na operação"); }
+    finally { setBusy(null); }
+  };
+
+  const start = () => {
+    const a = activityId.trim();
+    if (!a) { setErr("Informe o ID da atividade (courseActivityId)."); return; }
+    run("start", () => sdk.openpbl.startClass(roomId, a));
+  };
+  const sendCode = () => {
+    if (!cls?.presentation_code) return;
+    sdk.chat.send(roomId, `📋 Código da sessão: ${cls.presentation_code} — digite no seu pacote OpenPBL para registrar presença.`).catch(() => {});
+    setSentChat(true); setTimeout(() => setSentChat(false), 2500);
+  };
+
+  if (cls === null) return <div className="vr-scorm-empty">Carregando…</div>;
+
+  if (!cls.active) {
+    return (
+      <div className="vr-class-ctl">
+        <div className="vr-class-head">Aula OpenPBL</div>
+        <p className="vr-scorm-hint">Gere o código da sessão direto daqui — sem precisar abrir o pacote de apresentação.</p>
+        <div className="vr-scorm-relay-row">
+          <input value={activityId} onChange={(e) => setActivityId(e.target.value)}
+            placeholder="ID da atividade (courseActivityId)"
+            onKeyDown={(e) => { if (e.key === "Enter") start(); }} />
+          <button onClick={start} disabled={busy === "start"}>{busy === "start" ? "Gerando…" : "Iniciar aula"}</button>
+        </div>
+        {err && <p className="vr-class-err">{err}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="vr-class-ctl">
+      <div className="vr-class-head">Aula OpenPBL</div>
+      <div className="vr-class-code-box">
+        <span className="vr-class-code-label">Código da sessão</span>
+        <span className="vr-class-code">{cls.presentation_code}</span>
+        <button className="vr-mini" onClick={sendCode}>{sentChat ? "Enviado ✓" : "Enviar no chat"}</button>
+      </div>
+      <div className="vr-class-actions">
+        <button className="vr-class-btn" data-done={cls.released_dimensions}
+          disabled={busy !== null || cls.released_dimensions}
+          onClick={() => run("risks", () => sdk.openpbl.release(roomId, "risks"))}>
+          {cls.released_dimensions ? "✓ Riscos liberado" : busy === "risks" ? "Liberando…" : "Liberar Questionário de Riscos"}
+        </button>
+        <button className="vr-class-btn" data-done={cls.released}
+          disabled={busy !== null || cls.released}
+          onClick={() => run("perceptions", () => sdk.openpbl.release(roomId, "perceptions"))}>
+          {cls.released ? "✓ Percepções liberado" : busy === "perceptions" ? "Liberando…" : "Liberar Questionário de Percepções"}
+        </button>
+        <button className="vr-class-btn vr-class-btn-danger" data-done={!cls.checking_open}
+          disabled={busy !== null || !cls.checking_open}
+          onClick={() => run("close", () => sdk.openpbl.closeRegistration(roomId))}>
+          {!cls.checking_open ? "✓ Registro encerrado" : busy === "close" ? "Encerrando…" : "Encerrar registro"}
+        </button>
+      </div>
+      {(cls.group_codes?.length ?? 0) > 0 && (
+        <div className="vr-class-groups">
+          <span className="vr-class-code-label">Códigos dos grupos</span>
+          <div className="vr-class-group-list">
+            {cls.group_codes.map((g: string, i: number) => (
+              <span key={g} className="vr-class-group-chip" title={`Grupo ${i + 1}`}>{i + 1}: {g}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {err && <p className="vr-class-err">{err}</p>}
+    </div>
+  );
+}
+
+/** Chat do facilitador — responde os alunos que escrevem pelo chat do pacote. */
+function FacilitatorChat({ roomId }: { roomId: string }) {
+  const sdk = useSDK();
+  const [convs, setConvs] = useState<any[]>([]);
+  const [open, setOpen] = useState<any | null>(null);
+  const [msgs, setMsgs] = useState<any[]>([]);
+  const [text, setText] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
+
+  const loadConvs = () => sdk.openpbl.chat.conversations(roomId).then((c) => setConvs(Array.isArray(c) ? c : [])).catch(() => setUnavailable(true));
+  const loadMsgs = (conv: any) => sdk.openpbl.chat.messages(roomId, conv.id).then((m) => setMsgs(Array.isArray(m) ? m : [])).catch(() => {});
+
+  useEffect(() => {
+    loadConvs();
+    const iv = setInterval(() => { loadConvs(); }, 8000);
+    return () => clearInterval(iv);
+  }, [roomId]);
+  useEffect(() => {
+    if (!open) return;
+    loadMsgs(open);
+    const iv = setInterval(() => loadMsgs(open), 5000);
+    return () => clearInterval(iv);
+  }, [open?.id]);
+
+  const reply = async () => {
+    const t = text.trim();
+    if (!t || !open) return;
+    setText("");
+    await sdk.openpbl.chat.reply(roomId, open.id, t).catch(() => {});
+    loadMsgs(open);
+  };
+
+  if (unavailable) return null;   // chat não configurado no servidor — esconde a seção
+
+  return (
+    <div className="vr-fchat">
+      <div className="vr-class-head">Chat dos alunos (pacote)</div>
+      {!open ? (
+        convs.length === 0
+          ? <div className="vr-scorm-empty">Nenhuma conversa ainda. Quando um aluno escrever pelo pacote, aparece aqui.</div>
+          : (
+            <div className="vr-fchat-list">
+              {convs.map((c) => (
+                <button key={c.id} className="vr-fchat-conv" onClick={() => { setOpen(c); setMsgs([]); }}>
+                  <span className="vr-fchat-name">{c.student_name || c.student_email}</span>
+                  <span className="vr-fchat-meta">{c.course_id?.slice(0, 18)}{(c.unread ?? 0) > 0 ? ` • ${c.unread} nova(s)` : ""}</span>
+                </button>
+              ))}
+            </div>
+          )
+      ) : (
+        <div className="vr-fchat-thread">
+          <div className="vr-fchat-thread-head">
+            <button className="vr-mini" onClick={() => setOpen(null)}>← Conversas</button>
+            <span className="vr-fchat-name">{open.student_name || open.student_email}</span>
+          </div>
+          <div className="vr-fchat-msgs">
+            {msgs.map((m) => (
+              <div key={m.id} className="vr-fchat-msg" data-teacher={m.sender === "teacher"}>
+                <span>{m.content}</span>
+              </div>
+            ))}
+            {msgs.length === 0 && <div className="vr-scorm-empty">Sem mensagens.</div>}
+          </div>
+          <div className="vr-scorm-relay-row">
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Responder ao aluno…"
+              onKeyDown={(e) => { if (e.key === "Enter") reply(); }} />
+            <button onClick={reply}>Enviar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScormRelay({ roomId }: { roomId: string }) {
   const sdk = useSDK();
   const [code, setCode] = useState("");
@@ -817,6 +985,8 @@ function ScormPanel({ roomId }: { roomId: string }) {
 
   return (
     <div className="vr-scorm">
+      <ClassControl roomId={roomId} />
+      <FacilitatorChat roomId={roomId} />
       <ScormRelay roomId={roomId} />
       <div className="vr-scorm-progress">
         <div className="vr-scorm-head">

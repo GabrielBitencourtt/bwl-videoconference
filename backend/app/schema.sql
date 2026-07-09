@@ -171,3 +171,18 @@ CREATE TABLE IF NOT EXISTS video_breakout_assignments (
   UNIQUE (parent_room_id, identity)
 );
 CREATE INDEX IF NOT EXISTS idx_breakout_assign_group ON video_breakout_assignments(group_id);
+
+-- Aula OpenPBL ao vivo (class-code gerado pela webconf; ver migrations/008).
+CREATE TABLE IF NOT EXISTS video_room_openpbl_class (
+  room_id UUID PRIMARY KEY REFERENCES video_rooms(id) ON DELETE CASCADE,
+  activity_id TEXT NOT NULL,
+  presentation_code TEXT NOT NULL,
+  class_course_id TEXT NOT NULL,
+  group_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  facilitator_email TEXT NOT NULL,
+  facilitator_name TEXT NOT NULL DEFAULT '',
+  checking_open BOOLEAN NOT NULL DEFAULT true,
+  released_dimensions BOOLEAN NOT NULL DEFAULT false,
+  released BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
