@@ -24,6 +24,7 @@ from ..auth import get_current_user, optional_user, CurrentUser
 from ..config import settings
 from ..db import pool
 from ..realtime.hub import hub
+from .breakouts import _broadcast_state as _broadcast_breakout_state
 
 router = APIRouter(prefix="/api/rooms", tags=["openpbl-class"])
 
@@ -206,6 +207,14 @@ async def close_registration(room_id: str, user: CurrentUser = Depends(get_curre
 
     await pool().execute(
         "UPDATE video_room_openpbl_class SET checking_open=false WHERE room_id=$1", room_id)
+
+    # A API OpenPBL monta os grupos ao encerrar o registro — reflete nos breakouts
+    # da webconf (best-effort: não deve derrubar o fechamento se o listarGrupos falhar).
+    try:
+        await _sync_openpbl_groups(room_id, row)
+    except Exception:
+        pass
+
     row = await _get_class(room_id)
     state = _row_to_state(row)
     await hub.broadcast(room_id, "openpbl-class", state)
@@ -226,6 +235,85 @@ async def list_groups(room_id: str, user: CurrentUser = Depends(get_current_user
         if r.status_code != 200:
             raise HTTPException(502, f"OpenPBL listarGrupos falhou ({r.status_code})")
         return r.json()
+
+
+async def _sync_openpbl_groups(room_id: str, cls) -> int:
+    """Reflete os grupos montados pela API OpenPBL (ao encerrar o registro) nos
+    breakout rooms da webconf. Cada grupo do `listarGrupos` vira um breakout, e
+    cada aluno é atribuído mapeando o e-mail → identity do participante da sala.
+    Recria a configuração de grupos do zero. Retorna o nº de grupos criados."""
+    ccid = cls["class_course_id"]
+    if not ccid:
+        return 0
+    base = settings.openpbl_integration_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            r = await c.get(f"{base}/api/ClassRoomStudent/listarGrupos/{ccid}",
+                            headers=_integration_headers())
+        if r.status_code != 200:
+            return 0
+        payload = r.json() or {}
+    except Exception:
+        return 0
+
+    # `data` costuma vir como string JSON (o pacote facilitador faz eval()).
+    raw = payload.get("data") if isinstance(payload, dict) else payload
+    try:
+        groups = raw if isinstance(raw, list) else (json.loads(raw) if raw else [])
+    except Exception:
+        return 0
+    groups = [g for g in groups if isinstance(g, dict) and (g.get("Alunos") or [])]
+    if not groups:
+        return 0
+
+    # Mapa e-mail → (identity, nome) dos participantes atuais da sala.
+    parts = await pool().fetch(
+        "SELECT user_id, display_name, email FROM video_room_participants "
+        "WHERE room_id=$1 AND left_at IS NULL", room_id)
+    by_email = {(p["email"] or "").strip().lower(): (p["user_id"], p["display_name"] or "")
+                for p in parts if p["email"]}
+
+    room = await pool().fetchrow("SELECT * FROM video_rooms WHERE id=$1", room_id)
+    if not room:
+        return 0
+    # Recria do zero (mesma semântica do create_breakouts). Fecha se estava aberto.
+    if room["breakout_open"]:
+        await hub.broadcast(room_id, "breakout-close", {"room_id": room_id})
+    await pool().execute("DELETE FROM video_breakout_groups WHERE parent_room_id=$1", room_id)
+    await pool().execute(
+        "UPDATE video_rooms SET breakout_open=false, breakout_ends_at=NULL, breakout_mode='manual' WHERE id=$1",
+        room_id)
+
+    for i, g in enumerate(groups):
+        rn = f"{room['room_id']}__bo{i + 1}"
+        gid = await pool().fetchval(
+            "INSERT INTO video_breakout_groups (parent_room_id, name, room_name, position) "
+            "VALUES ($1,$2,$3,$4) RETURNING id", room_id, f"Grupo {i + 1}", rn, i)
+        for aluno in (g.get("Alunos") or []):
+            email = (aluno.get("Email") or "").strip().lower()
+            hit = by_email.get(email)
+            if not hit:
+                continue   # aluno do grupo não está (ainda) na sala de vídeo
+            await pool().execute(
+                "INSERT INTO video_breakout_assignments (parent_room_id, group_id, identity, display_name) "
+                "VALUES ($1,$2,$3,$4) ON CONFLICT (parent_room_id, identity) DO UPDATE "
+                "SET group_id=EXCLUDED.group_id, display_name=EXCLUDED.display_name",
+                room_id, str(gid), hit[0], (aluno.get("Name") or hit[1]))
+
+    await _broadcast_breakout_state(room_id)
+    return len(groups)
+
+
+@router.post("/{room_id}/openpbl/sync-groups")
+async def sync_groups(room_id: str, user: CurrentUser = Depends(get_current_user)):
+    """(Re)cria os breakouts a partir dos grupos da API OpenPBL. Idempotente —
+    útil se os grupos ainda estavam sendo montados quando o registro fechou."""
+    await _require_host(user)
+    row = await _get_class(room_id)
+    if not row:
+        raise HTTPException(404, "aula OpenPBL não iniciada nesta sala")
+    n = await _sync_openpbl_groups(room_id, row)
+    return {"ok": True, "groups": n}
 
 
 # ── roster: status dos alunos p/ as bordas dos tiles ──────────────────────

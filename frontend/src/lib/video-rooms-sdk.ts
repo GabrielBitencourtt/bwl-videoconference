@@ -240,6 +240,9 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       closeRegistration: (roomId: string) =>
         call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/close-registration`, { method: "POST" }),
       groups: (roomId: string) => call<any[]>(`/api/rooms/${roomId}/openpbl/groups`),
+      /** (Re)cria os breakouts a partir dos grupos montados pela API OpenPBL. */
+      syncGroups: (roomId: string) =>
+        call<{ ok: boolean; groups: number }>(`/api/rooms/${roomId}/openpbl/sync-groups`, { method: "POST" }),
       /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
        *  + badge de registrado. Público — todo cliente da sala faz polling. */
       roster: (roomId: string) =>

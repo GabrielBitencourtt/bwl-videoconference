@@ -1073,6 +1073,7 @@ function ClassControl({ roomId }: { roomId: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sentChat, setSentChat] = useState(false);
+  const [groupInfo, setGroupInfo] = useState<string | null>(null);
 
   useEffect(() => {
     sdk.openpbl.classState(roomId).then(setCls).catch(() => setCls({ active: false }));
@@ -1080,6 +1081,29 @@ function ClassControl({ roomId }: { roomId: string }) {
       if (event === "openpbl-class") setCls(payload);
     });
   }, [roomId]);
+
+  const groupMsg = (n: number) =>
+    n > 0 ? `${n} grupo(s) criado(s) — veja/abra na aba Grupos.`
+          : "Nenhum grupo retornado ainda. Se alunos acabaram de entrar, sincronize em instantes.";
+
+  // Encerrar registro: a API OpenPBL monta os grupos; o backend já reflete nos
+  // breakouts. Aqui confirmamos a contagem (e cobre alunos que entraram no fim).
+  const closeReg = async () => {
+    setBusy("close"); setErr(null); setGroupInfo(null);
+    try {
+      setCls(await sdk.openpbl.closeRegistration(roomId));
+      const res = await sdk.openpbl.syncGroups(roomId);
+      setGroupInfo(groupMsg(res.groups));
+    } catch (e: any) { setErr(e?.message?.slice(0, 180) || "Falha ao encerrar"); }
+    finally { setBusy(null); }
+  };
+
+  const resync = async () => {
+    setBusy("resync"); setErr(null);
+    try { const res = await sdk.openpbl.syncGroups(roomId); setGroupInfo(groupMsg(res.groups)); }
+    catch (e: any) { setErr(e?.message?.slice(0, 180) || "Falha ao sincronizar"); }
+    finally { setBusy(null); }
+  };
 
   const run = async (key: string, fn: () => Promise<any>) => {
     setBusy(key); setErr(null);
@@ -1138,10 +1162,16 @@ function ClassControl({ roomId }: { roomId: string }) {
         </button>
         <button className="vr-class-btn vr-class-btn-danger" data-done={!cls.checking_open}
           disabled={busy !== null || !cls.checking_open}
-          onClick={() => run("close", () => sdk.openpbl.closeRegistration(roomId))}>
+          onClick={closeReg}>
           {!cls.checking_open ? "✓ Registro encerrado" : busy === "close" ? "Encerrando…" : "Encerrar registro"}
         </button>
+        {!cls.checking_open && (
+          <button className="vr-class-btn" disabled={busy !== null} onClick={resync}>
+            {busy === "resync" ? "Sincronizando…" : "Sincronizar grupos"}
+          </button>
+        )}
       </div>
+      {groupInfo && <p className="vr-class-ok">{groupInfo}</p>}
       {(cls.group_codes?.length ?? 0) > 0 && (
         <div className="vr-class-groups">
           <span className="vr-class-code-label">Códigos dos grupos</span>
