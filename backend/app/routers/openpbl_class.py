@@ -209,10 +209,11 @@ async def close_registration(room_id: str, user: CurrentUser = Depends(get_curre
     await pool().execute(
         "UPDATE video_room_openpbl_class SET checking_open=false WHERE room_id=$1", room_id)
 
-    # A API OpenPBL monta os grupos ao encerrar o registro — reflete nos breakouts
-    # da webconf (best-effort: não deve derrubar o fechamento se o listarGrupos falhar).
+    # Ao encerrar o registro, divide automaticamente os alunos presentes em grupos
+    # (ninguém sozinho, máx 6 grupos, máx 5 por grupo). Best-effort: não derruba o
+    # fechamento se algo falhar.
     try:
-        await _sync_openpbl_groups(room_id, row)
+        await _auto_group_breakouts(room_id)
     except Exception:
         pass
 
@@ -305,15 +306,62 @@ async def _sync_openpbl_groups(room_id: str, cls) -> int:
     return len(groups)
 
 
+async def _auto_group_breakouts(room_id: str) -> int:
+    """Divide os alunos PRESENTES em grupos de vídeo: ninguém sozinho, no máximo
+    6 grupos e no máximo 5 por grupo. Distribuição round-robin (equilibrada).
+    Determinístico (ordem de entrada) — recria a configuração. Retorna nº de grupos."""
+    parts = await pool().fetch(
+        "SELECT p.user_id, p.display_name FROM video_room_participants p "
+        "JOIN video_rooms r ON r.id = p.room_id "
+        "WHERE p.room_id=$1 AND p.left_at IS NULL AND p.is_staff=false AND p.user_id <> r.owner_id "
+        "ORDER BY p.joined_at", room_id)
+    n = len(parts)
+    if n < 1:
+        return 0
+    if n == 1:
+        g = 1
+    else:
+        g = min(6, (n + 4) // 5)           # ceil(n/5), no máx 6 grupos
+        while g > 1 and n < 2 * g:         # garante ninguém sozinho (mín 2 por grupo)
+            g -= 1
+
+    room = await pool().fetchrow("SELECT * FROM video_rooms WHERE id=$1", room_id)
+    if not room:
+        return 0
+    if room["breakout_open"]:
+        await hub.broadcast(room_id, "breakout-close", {"room_id": room_id})
+    await pool().execute("DELETE FROM video_breakout_groups WHERE parent_room_id=$1", room_id)
+    await pool().execute(
+        "UPDATE video_rooms SET breakout_open=false, breakout_ends_at=NULL, breakout_mode='manual' WHERE id=$1",
+        room_id)
+
+    gids = []
+    for i in range(g):
+        rn = f"{room['room_id']}__bo{i + 1}"
+        gid = await pool().fetchval(
+            "INSERT INTO video_breakout_groups (parent_room_id, name, room_name, position) "
+            "VALUES ($1,$2,$3,$4) RETURNING id", room_id, f"Grupo {i + 1}", rn, i)
+        gids.append(str(gid))
+    for idx, p in enumerate(parts):
+        await pool().execute(
+            "INSERT INTO video_breakout_assignments (parent_room_id, group_id, identity, display_name) "
+            "VALUES ($1,$2,$3,$4) ON CONFLICT (parent_room_id, identity) DO UPDATE "
+            "SET group_id=EXCLUDED.group_id, display_name=EXCLUDED.display_name",
+            room_id, gids[idx % g], p["user_id"], p["display_name"] or "")
+
+    await _broadcast_breakout_state(room_id)
+    return g
+
+
 @router.post("/{room_id}/openpbl/sync-groups")
 async def sync_groups(room_id: str, user: CurrentUser = Depends(get_current_user)):
-    """(Re)cria os breakouts a partir dos grupos da API OpenPBL. Idempotente —
-    útil se os grupos ainda estavam sendo montados quando o registro fechou."""
+    """(Re)divide os alunos presentes em grupos (ninguém sozinho, máx 6 grupos,
+    máx 5 por grupo). Determinístico — útil se entrou/saiu aluno."""
     await _require_host(user)
     row = await _get_class(room_id)
     if not row:
         raise HTTPException(404, "aula OpenPBL não iniciada nesta sala")
-    n = await _sync_openpbl_groups(room_id, row)
+    n = await _auto_group_breakouts(room_id)
     return {"ok": True, "groups": n}
 
 
