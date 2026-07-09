@@ -574,6 +574,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // Facilitador com a aula OpenPBL ativa: ganha a coluna esquerda (câmera + código
   // + apresentação). Sem a turma criada ainda, cai no layout comum de alunos.
   const pblHost = !!(scorm && isStaff && pblRoster?.activity_id);
+  const pblActive = !!(scorm && pblRoster?.activity_id);   // host OU aluno na aula OpenPBL
 
   // Sequenciamento do facilitador (botão verde ▶): estado da aula OpenPBL + etapa.
   const [pblClass, setPblClass] = useState<any | null>(null);
@@ -667,29 +668,34 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
         )}
 
-      {/* Facilitador: coluna própria à esquerda (câmera + class code no topo,
-          apresentação abaixo). Só então o chat pode abrir à direita, e a grade
-          de alunos fica com todo o centro. O aluno mantém o layout espelhado. */}
-      <div className="vr-stage" data-pbl={scorm && !pblHost ? "1" : undefined}>
-        {pblHost && (
+      {/* Coluna própria à esquerda (câmera do facilitador + class code no topo,
+          apresentação abaixo) — IGUAL para host e aluno. O aluno recebe a
+          apresentação transmitida (screen-share) na MESMA posição do iframe do host. */}
+      <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined}>
+        {pblActive && (
           <aside className="vr-pbl-side">
             <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />
-            {pblStage === "presentation" ? (
-              // Etapa 1: apresentação embutida (fecha ao avançar de etapa).
-              <div className="vr-pbl-present-big" ref={presentElRef}>
-                <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
-              </div>
-            ) : (chartAvailable && !chartHidden) ? (
-              // Riscos em diante: gráfico radar (live), ocultável pelo facilitador.
-              <div className="vr-pbl-present-big">
-                <RiskChart roomId={roomId} />
-              </div>
-            ) : null}
+            {isStaff ? (
+              pblStage === "presentation" ? (
+                // Host, etapa 1: apresentação embutida (fecha ao avançar de etapa).
+                <div className="vr-pbl-present-big" ref={presentElRef}>
+                  <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+                </div>
+              ) : (chartAvailable && !chartHidden) ? (
+                // Host, Riscos em diante: gráfico radar (live), ocultável.
+                <div className="vr-pbl-present-big">
+                  <RiskChart roomId={roomId} />
+                </div>
+              ) : null
+            ) : (
+              // Aluno: apresentação transmitida pelo host (screen-share), mesma posição.
+              <StudentPresentation />
+            )}
           </aside>
         )}
         <div className="vr-grid-wrap">
           {scorm
-            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
+            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} sideScreen={pblActive} />
             : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
@@ -721,7 +727,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
-            {scorm && !pblHost && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
+            {scorm && !pblActive && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -1018,15 +1024,29 @@ function useFittedCols(count: number) {
 /** Grade dos ALUNOS (área principal, à direita) com borda de status:
  *  🟢 dentro do pacote · 🔴 fora · badge ✓ = registrou presença com o class-code.
  *  O facilitador e o código ficam no header do painel (PblPanelHeader). */
-function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; strip?: boolean }) {
+/** Aluno: apresentação transmitida pelo facilitador (screen-share) na coluna
+ *  esquerda — mesma posição do iframe do host. Some quando não há transmissão. */
+function StudentPresentation() {
+  const tracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }], { onlySubscribed: false });
+  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal);
+  if (!screen) return null;
+  return (
+    <div className="vr-pbl-present-big">
+      <ParticipantTile trackRef={screen} className="vr-present-share" />
+    </div>
+  );
+}
+
+function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideScreen }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; strip?: boolean; sideScreen?: boolean }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
   );
 
   // Screen-share de OUTRO participante = o professor transmitindo a apresentação.
-  // O próprio compartilhador NÃO vê a sua transmissão (segue vendo o iframe ao vivo).
-  const screen = !strip && tracks.find(
+  // Em aula OpenPBL (`sideScreen`) a transmissão vai para a coluna esquerda
+  // (.vr-pbl-side), então aqui a grade mostra só os alunos.
+  const screen = !strip && !sideScreen && tracks.find(
     (t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal,
   );
 
