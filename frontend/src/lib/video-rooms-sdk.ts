@@ -243,6 +243,10 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       /** (Re)cria os breakouts a partir dos grupos montados pela API OpenPBL. */
       syncGroups: (roomId: string) =>
         call<{ ok: boolean; groups: number }>(`/api/rooms/${roomId}/openpbl/sync-groups`, { method: "POST" }),
+      /** Dados do gráfico radar do Questionário de Riscos (agregado por grupo). */
+      riskChart: (roomId: string) =>
+        call<{ available: boolean; reason?: string; chart?: { dimensions: string[]; baseGrades: number[]; groupAverageGrades: number[]; groups: { grades: number[] }[] } }>(
+          `/api/rooms/${roomId}/openpbl/risk-chart`),
       /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
        *  + badge de registrado. Público — todo cliente da sala faz polling. */
       roster: (roomId: string) =>

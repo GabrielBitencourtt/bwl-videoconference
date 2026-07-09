@@ -22,6 +22,7 @@ class RoomCreate(BaseModel):
     scheduled_at: Optional[datetime] = None
     external_ref: Optional[str] = None
     openpbl_activity_id: Optional[str] = None   # aula OpenPBL: auto-gera o class-code ao entrar
+    openpbl_dimensions_id: Optional[str] = None  # aula OpenPBL: dimensionsId p/ o gráfico de riscos
 
 
 class RoomOut(BaseModel):
@@ -50,6 +51,7 @@ class RoomOut(BaseModel):
     external_ref: Optional[str]
     require_email: bool = False
     openpbl_activity_id: Optional[str] = None
+    openpbl_dimensions_id: Optional[str] = None
     scheduled_at: Optional[datetime]
     ended_at: Optional[datetime]
     created_at: datetime

@@ -316,6 +316,41 @@ async def sync_groups(room_id: str, user: CurrentUser = Depends(get_current_user
     return {"ok": True, "groups": n}
 
 
+@router.get("/{room_id}/openpbl/risk-chart")
+async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Dados agregados do Questionário de Riscos (radar), como o gráfico do chat do
+    pacote. Fonte: integration `PerformanceEvaluation/performance-groups/{code}`.
+    Precisa do `openpbl_dimensions_id` (selecionado na criação da sala)."""
+    await _require_host(user)
+    cls = await _get_class(room_id)
+    if not cls:
+        return {"available": False, "reason": "class_not_started"}
+    room = await pool().fetchrow("SELECT openpbl_dimensions_id FROM video_rooms WHERE id=$1", room_id)
+    dims_id = (room["openpbl_dimensions_id"] if room else None) or ""
+    if not dims_id.strip():
+        return {"available": False, "reason": "no_dimensions_id"}
+
+    base = settings.openpbl_integration_url.rstrip("/")
+    code = cls["presentation_code"]
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(
+                f"{base}/api/PerformanceEvaluation/performance-groups/{code}",
+                params={"dimensionsId": dims_id.strip()},
+                headers={"Accept": "application/json"})
+        if r.status_code != 200:
+            return {"available": False, "reason": f"http_{r.status_code}"}
+        data = r.json()
+    except Exception:
+        return {"available": False, "reason": "fetch_error"}
+
+    # A resposta pode vir embrulhada em {data:{...}} ou direta.
+    payload = data.get("data") if isinstance(data, dict) and "data" in data else data
+    if not isinstance(payload, dict) or not payload.get("dimensions"):
+        return {"available": False, "reason": "empty"}
+    return {"available": True, "chart": payload}
+
+
 # ── roster: status dos alunos p/ as bordas dos tiles ──────────────────────
 # Verde = dentro do pacote; vermelho = fora; badge = registrou presença na
 # sessão (Presentation/Students). Todo cliente da sala faz polling, então o

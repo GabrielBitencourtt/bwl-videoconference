@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS video_rooms (
   external_ref TEXT,                           -- e.g. booking_id from host
   require_email BOOLEAN NOT NULL DEFAULT false, -- ask guests for e-mail (SCORM/OpenPBL)
   openpbl_activity_id TEXT,                      -- aula OpenPBL: auto-gera class-code
+  openpbl_dimensions_id TEXT,                    -- aula OpenPBL: dimensionsId p/ o gráfico de riscos
   breakout_open BOOLEAN NOT NULL DEFAULT false,  -- grupos (breakout) abertos?
   breakout_ends_at TIMESTAMPTZ,                  -- retorno automático dos grupos
   breakout_mode TEXT NOT NULL DEFAULT 'auto',    -- auto | manual | self
