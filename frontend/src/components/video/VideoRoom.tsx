@@ -60,6 +60,9 @@ const I = {
   phone: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15.46l-5.27-.61-2.52 2.52a15.05 15.05 0 0 1-6.59-6.59l2.53-2.53L8.54 3H3.03C2.45 13.18 10.82 21.55 21 20.97v-5.51z"/></svg>,
   groups: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
   more: <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>,
+  eye: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+  eyeOff: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
+  expand: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
 };
 
@@ -744,8 +747,8 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
           <div className="vr-pbl-code-top">
             <span className="vr-pbl-code-label">Class code</span>
             <div className="vr-pbl-code-tools">
-              {isHost && <button className="vr-pbl-code-ico" onClick={toggle} title="Ocultar o código para todos">🙈</button>}
-              <button className="vr-pbl-code-ico" onClick={() => setExpand(true)} title="Ampliar">⛶</button>
+              {isHost && <button className="vr-pbl-code-ico" onClick={toggle} title="Ocultar o código para todos">{I.eyeOff}</button>}
+              <button className="vr-pbl-code-ico" onClick={() => setExpand(true)} title="Ampliar">{I.expand}</button>
             </div>
           </div>
           <span className="vr-pbl-code">{code}</span>
@@ -755,7 +758,9 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
 
       {/* Oculto: só o facilitador vê o botão de reexibir para todos */}
       {code && hidden && isHost && (
-        <button className="vr-pbl-code-show" onClick={toggle} title="Reexibir o código para todos">👁 Mostrar class code</button>
+        <button className="vr-pbl-code-show" onClick={toggle} title="Reexibir o código para todos">
+          {I.eye}<span>Mostrar class code</span>
+        </button>
       )}
 
       {expand && code && (
@@ -903,7 +908,7 @@ function ClassControl({ roomId }: { roomId: string }) {
   };
   const sendCode = () => {
     if (!cls?.presentation_code) return;
-    sdk.chat.send(roomId, `📋 Código da sessão: ${cls.presentation_code} — digite no seu pacote OpenPBL para registrar presença.`).catch(() => {});
+    sdk.chat.send(roomId, `Código da sessão: ${cls.presentation_code} — digite no seu pacote OpenPBL para registrar presença.`).catch(() => {});
     setSentChat(true); setTimeout(() => setSentChat(false), 2500);
   };
 
