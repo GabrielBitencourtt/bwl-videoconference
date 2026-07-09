@@ -806,19 +806,11 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { r
     { onlySubscribed: false },
   );
 
-  // Compartilhamento de tela em spotlight, sobrepondo o layout (só no modo grade).
-  const screen = !strip && tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
-  if (screen) {
-    const sharerCam = tracks.find(
-      (t) => t.source === Track.Source.Camera && t.participant.identity === screen.participant.identity,
-    );
-    return (
-      <div className="vr-spotlight">
-        <ParticipantTile trackRef={screen} className="vr-spotlight-main" />
-        {sharerCam && <div className="vr-spotlight-pip"><ParticipantTile trackRef={sharerCam} /></div>}
-      </div>
-    );
-  }
+  // Screen-share de OUTRO participante = o professor transmitindo a apresentação.
+  // O próprio compartilhador NÃO vê a sua transmissão (segue vendo o iframe ao vivo).
+  const screen = !strip && tracks.find(
+    (t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal,
+  );
 
   const byId: Record<string, any> = {};
   (roster?.students || []).forEach((s: any) => { byId[s.identity] = s; });
@@ -827,7 +819,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { r
 
   const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity));
 
-  return (
+  const grid = (
     <div className={strip ? "vr-pbl-students vr-pbl-students--strip" : "vr-pbl-students"}>
       {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
       {studentTiles.map((t) => {
@@ -841,6 +833,21 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { r
       })}
     </div>
   );
+
+  // Professor transmitindo → o aluno vê a apresentação à ESQUERDA (mesmo container
+  // e tamanho que o professor vê o iframe) e os alunos à direita, espelhando o layout.
+  if (screen) {
+    return (
+      <div className="vr-pbl-main">
+        <div className="vr-pbl-present-big">
+          <ParticipantTile trackRef={screen} className="vr-present-share" />
+        </div>
+        <div className="vr-pbl-students-col">{grid}</div>
+      </div>
+    );
+  }
+
+  return grid;
 }
 
 /** Header do painel (OpenPBL): câmera do facilitador destacada + card do class-code.

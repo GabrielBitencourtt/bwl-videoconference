@@ -678,6 +678,9 @@
   background: #fff; box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
 }
 .vr-present-iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
+/* Apresentação transmitida (screen-share do professor) vista pelo aluno */
+.vr-present-share, .vr-present-share .lk-participant-tile { width: 100%; height: 100%; background: #000; }
+.vr-present-share video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 /* Coluna dos alunos (metade direita) */
 .vr-pbl-students-col { flex: 1; min-width: 0; min-height: 0; }
 .vr-pbl-students-col .vr-pbl-students { height: 100%; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
