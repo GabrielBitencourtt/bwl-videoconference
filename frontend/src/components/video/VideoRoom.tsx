@@ -417,7 +417,7 @@ function PreJoin({ title, name, camOn, micOn, setCamOn, setMicOn, onJoin }: {
 }
 
 /* ---------------- In-room shell ---------------- */
-function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; breakout: BreakoutCtx }) {
+function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx }) {
   const sdk = useSDK();
   // No celular o painel começa fechado pra mostrar o vídeo; no desktop abre no chat.
   const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(
@@ -436,6 +436,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
   const canEditBoard = isStaff || boardEdit;
+  const room = useRoomContext();
+  const [presenting, setPresenting] = useState(false);          // apresentação sendo transmitida
+  const presentTrackRef = useRef<MediaStreamTrack | null>(null);
+  const presentElRef = useRef<HTMLDivElement | null>(null);     // área do slide (alvo do recorte)
 
   // Branding (logo/cor/nome) via endpoint público — funciona até no embed
   // cross-site, onde rooms.get (autenticado) não está disponível.
@@ -471,7 +475,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     });
   }, [roomId, identity]);
 
-  // A apresentação embutida (pacote) reporta a etapa atual via postMessage.
+  // A apresentação embutida reporta a etapa atual (para o rótulo do ▶).
   useEffect(() => {
     if (!scorm) return;
     const onMsg = (e: MessageEvent) => {
@@ -525,6 +529,45 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (isStaff) sdk.whiteboard.toggle(roomId, next).catch(() => {});
   };
 
+  // Transmite SÓ a área da apresentação aos alunos, recortando o compartilhamento
+  // da própria aba (Region Capture). O iframe do play2 é cross-origin e não pode
+  // ser capturado direto, mas o recorte da aba funciona por cima dele — o aluno
+  // recebe como um screen-share comum (cai no spotlight da grade).
+  const togglePresent = async () => {
+    if (presenting) {
+      const t = presentTrackRef.current;
+      if (t) { try { await room.localParticipant.unpublishTrack(t as any); } catch { /* */ } t.stop(); }
+      presentTrackRef.current = null;
+      setPresenting(false);
+      return;
+    }
+    const el = presentElRef.current;
+    if (!el) return;
+    try {
+      const md = navigator.mediaDevices as any;
+      const stream: MediaStream = await md.getDisplayMedia({
+        video: { frameRate: 15 },
+        audio: false,
+        preferCurrentTab: true,     // Chrome/Edge: força a aba atual (necessário p/ o recorte)
+      });
+      const track = stream.getVideoTracks()[0];
+      const CT = (window as any).CropTarget;
+      if (CT?.fromElement && (track as any).cropTo) {
+        try {
+          const target = await CT.fromElement(el);
+          await (track as any).cropTo(target);   // recorta só para a área do slide
+        } catch { /* sem recorte disponível: transmite a aba inteira */ }
+      }
+      track.addEventListener("ended", () => {    // professor parou pela barra do navegador
+        presentTrackRef.current = null;
+        setPresenting(false);
+      });
+      await room.localParticipant.publishTrack(track as any, { source: Track.Source.ScreenShare });
+      presentTrackRef.current = track;
+      setPresenting(true);
+    } catch { /* professor cancelou o seletor */ }
+  };
+
   // confirm() nativo é bloqueado em iframe cross-origin (embed) → modal in-app.
   const doEndRoom = () => { sdk.rooms.end(roomId).catch(() => {}); setConfirmEnd(false); };
 
@@ -549,7 +592,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       </header>
 
       {scorm && isStaff && pblRoster?.activity_id && (
-        <ActivityBar label={pblStep} onNext={() => presentationPost("next")} />
+        <ActivityBar label={pblStep} onNext={() => presentationPost("next")} presenting={presenting} onPresent={togglePresent} />
       )}
 
       {breakout.isStaff
@@ -568,7 +611,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           {scorm
             ? (isStaff && pblRoster?.activity_id
                 ? <div className="vr-pbl-main">
-                    <div className="vr-pbl-present-big">
+                    <div className="vr-pbl-present-big" ref={presentElRef}>
                       <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
                     </div>
                     <div className="vr-pbl-students-col">
@@ -703,9 +746,9 @@ function VideoGrid() {
 const OPENPBL_PLAY_BASE = "https://play2.openpbl.ai";
 
 /** Envia comando à apresentação embutida (ponte postMessage — o pacote escuta). */
-function presentationPost(type: "next" | "prev") {
+function presentationPost(type: "next" | "prev" | "goto", hash?: string) {
   const f = document.getElementById("openpbl-presentation") as HTMLIFrameElement | null;
-  f?.contentWindow?.postMessage({ source: "bwl-webconf", type }, "*");
+  f?.contentWindow?.postMessage({ source: "bwl-webconf", type, hash }, "*");
 }
 
 /** Apresentação OpenPBL embutida (área principal). Lança direto (sem formulário)
@@ -729,14 +772,24 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
   );
 }
 
-/** Barra "Próxima atividade ▶" (topo) — só o facilitador avança a apresentação. */
-function ActivityBar({ label, onNext }: { label: string; onNext: () => void }) {
+/** Barra "Próxima atividade ▶" (topo) — só o facilitador avança a apresentação
+ *  e a transmite aos alunos (recorte da própria aba). */
+function ActivityBar({ label, onNext, presenting, onPresent }: { label: string; onNext: () => void; presenting?: boolean; onPresent?: () => void }) {
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
         <span className="vr-actbar-cap">Próxima atividade</span>
         <span className="vr-actbar-name">{label || "Apresentação"}</span>
       </div>
+      {onPresent && (
+        <button
+          className={presenting ? "vr-actbar-present is-on" : "vr-actbar-present"}
+          onClick={onPresent}
+          title={presenting ? "Parar de transmitir aos alunos" : "Transmitir a apresentação aos alunos"}
+        >
+          {presenting ? "Parar transmissão" : "Apresentar aos alunos"}
+        </button>
+      )}
       <button className="vr-actbar-next" onClick={onNext} title="Avançar a apresentação">
         {I.playTri}
       </button>
