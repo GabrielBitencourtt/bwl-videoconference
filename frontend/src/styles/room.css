@@ -34,9 +34,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 18px;
+  padding: 6px 14px;
   gap: 12px;
 }
+/* Tudo (controles, cronômetro/contagem, Encerrar sala) no canto superior direito.
+   Sem `margin-left: auto`: o espaço livre é do .vr-actbar, que se centra nele. */
+.vr-header-right { display: flex; align-items: center; gap: 14px; flex: none; }
 .vr-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .vr-logo {
   width: 28px; height: 28px; border-radius: 8px;
@@ -163,14 +166,7 @@
 .vr-setrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--vr-border); }
 .vr-setrow-l { font-size: 13px; font-weight: 600; color: var(--vr-text); }
 .vr-setrow-s { font-size: 11px; color: var(--vr-text-dim); margin-top: 2px; }
-.vr-setrow .tg, .vr-person-ctrls .tg { flex: none; }
-.tg {
-  width: 38px; height: 22px; border-radius: 999px; border: none; cursor: pointer; position: relative;
-  background: var(--vr-border); transition: background .15s;
-}
-.tg::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
-.tg[data-on="true"] { background: var(--brand-accent); }
-.tg[data-on="true"]::after { transform: translateX(16px); }
+/* `.tg` (chave) vive em app.css — definição única compartilhada com o modal. */
 
 /* OpenPBL / SCORM panel */
 .vr-scorm { padding: 12px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
@@ -264,39 +260,34 @@
 .vr-send:hover { background: var(--brand-accent-hover); }
 
 /* ---------- Control bar ---------- */
-.vr-controls { display: flex; justify-content: center; padding: 14px; }
-.vr-pill {
-  display: flex; align-items: center; gap: 10px;
-  background: rgba(20, 23, 31, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--vr-border);
-  border-radius: 999px; padding: 10px 14px; box-shadow: var(--vr-shadow);
-}
+/* Barra de chamada: ícone + descrição, ancorada no topo à esquerda. */
+.vr-controls { display: flex; align-items: flex-start; gap: 2px; flex-wrap: wrap; }
 .vr-ctrl {
-  width: 48px; height: 48px; border-radius: 50%;
-  border: none; cursor: pointer; display: grid; place-items: center;
-  background: var(--vr-surface-2); color: var(--vr-text);
-  transition: background .15s, transform .05s;
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  padding: 2px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: var(--vr-text-dim);
 }
-.vr-ctrl:hover { background: #2a303c; }
-.vr-ctrl:active { transform: scale(.94); }
+.vr-ctrl-ico {
+  position: relative; width: 46px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center; color: var(--vr-text);
+  background: transparent; transition: background .15s;
+}
+.vr-ctrl:hover .vr-ctrl-ico { background: var(--vr-surface-2); }
+.vr-ctrl:active .vr-ctrl-ico { transform: scale(.94); }
 .vr-ctrl svg { width: 20px; height: 20px; }
-.vr-ctrl[data-off="true"] { background: var(--vr-danger); color: #fff; }
-.vr-ctrl[data-active="true"] { background: var(--brand-accent); color: #fff; }
-.vr-ctrl[data-leave="true"] { background: var(--vr-danger); color: #fff; width: 56px; border-radius: 28px; }
-.vr-ctrl[data-leave="true"]:hover { background: var(--vr-danger-hover); }
-/* Record button: red dot when idle (clear affordance), pulsing red when active */
-.vr-rec-btn { color: var(--vr-danger); }
-.vr-rec-btn:hover { background: #2a303c; }
-.vr-rec-btn[data-active="true"] { background: var(--vr-danger); color: #fff; animation: vr-pulse 1.2s infinite; }
-.vr-rec-btn[data-active="true"]:hover { background: var(--vr-danger-hover); }
-.vr-ctrl-badge { position: relative; }
-.vr-ctrl-badge[data-count]:not([data-count="0"])::after {
-  content: attr(data-count); position: absolute; top: -2px; right: -2px;
-  background: var(--brand-accent); color: #fff; font-size: 10px; font-weight: 700;
-  min-width: 16px; height: 16px; border-radius: 8px; display: grid; place-items: center; padding: 0 3px;
-}
-.vr-sep { width: 1px; height: 28px; background: var(--vr-border); margin: 0 2px; }
+.vr-ctrl-lbl { font-size: 10px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.vr-ctrl:disabled { opacity: .5; cursor: default; }
+
+.vr-ctrl[data-off="true"] .vr-ctrl-ico { background: var(--vr-danger); color: #fff; }
+.vr-ctrl[data-active="true"] .vr-ctrl-ico { background: var(--brand-accent); color: #fff; }
+.vr-ctrl[data-leave="true"] { color: var(--vr-danger); }
+.vr-ctrl[data-leave="true"] .vr-ctrl-ico { background: var(--vr-danger); color: #fff; }
+.vr-ctrl[data-leave="true"]:hover .vr-ctrl-ico { background: var(--vr-danger-hover); }
+/* Gravar: ponto vermelho parado, pulsando quando ativo */
+.vr-rec-btn .vr-ctrl-ico { color: var(--vr-danger); }
+.vr-rec-btn[data-active="true"] .vr-ctrl-ico { background: var(--vr-danger); color: #fff; animation: vr-pulse 1.2s infinite; }
+
+.vr-sep { width: 1px; height: 30px; align-self: center; background: var(--vr-border); margin: 0 8px; }
 
 /* ---------- Pre-join ---------- */
 .vr-prejoin { flex: 1; display: grid; place-items: center; padding: 24px; }
@@ -355,7 +346,7 @@
   .vr-bo-row input, .vr-bo-row select { min-width: 0; flex: 1; }
 
   /* Menu "⋮" e modais ocupam quase a tela */
-  .vr-ctrl-menu { right: 50%; transform: translateX(50%); }
+  .vr-ctrl-menu { right: 0; left: auto; transform: none; }
   .vr-sheet { width: 96vw; max-height: 90vh; }
 }
 
@@ -491,7 +482,8 @@
 /* Menu "⋮" na barra de controles (abre acima do botão) */
 .vr-ctrl-more { position: relative; display: inline-flex; }
 .vr-ctrl-menu {
-  position: absolute; bottom: calc(100% + 10px); right: 0; z-index: 30;
+  /* Barra no topo à direita: o menu desce e alinha pela direita (antes subia). */
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
   background: var(--vr-surface-2); border: 1px solid var(--vr-border);
   border-radius: 10px; box-shadow: var(--vr-shadow); min-width: 184px; padding: 6px;
   display: flex; flex-direction: column; gap: 2px;
@@ -583,6 +575,24 @@
 .vr-stage[data-pbl="1"] { flex-direction: row-reverse; }
 
 /* Header do painel: câmera do facilitador (topo) + card do class-code (abaixo) */
+/* Coluna do facilitador (esquerda): câmera + class code lado a lado no topo,
+   apresentação ocupando todo o resto. Libera a direita para o chat. */
+/* Facilitador + apresentação à esquerda; o resto é dos alunos (o chat, quando
+   aberto, divide espaço com eles). Abaixo de 50% para os cards crescerem. */
+.vr-pbl-side {
+  width: 42%; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0;
+}
+/* Câmera do facilitador com o class code logo abaixo, ambos com a mesma largura.
+   Sobrepor o código dentro da câmera cobriria o rosto do professor. */
+.vr-pbl-side .vr-pbl-head {
+  flex: none; flex-direction: column; align-items: flex-start;
+  gap: 8px; padding: 0; border-bottom: none;
+}
+/* ~5% menor que a câmera antiga, que ocupava os ~318px do painel. */
+.vr-pbl-side .vr-pbl-head-cam { flex: none; width: 300px; max-width: 100%; }
+.vr-pbl-side .vr-pbl-code-card { flex: none; width: 300px; max-width: 100%; }
+.vr-pbl-side .vr-pbl-present-big { flex: 1; min-height: 0; }
+
 .vr-pbl-head { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); }
 .vr-pbl-head-cam {
   width: 100%; aspect-ratio: 16 / 10;
@@ -623,12 +633,19 @@
 .vr-pbl-big-x { position: absolute; top: 12px; right: 14px; color: #666; }
 
 /* Grade dos alunos (área principal) */
+/* As colunas vêm inline (useFittedCols): dependem de quantos alunos há e do
+   espaço livre. `scrollbar-gutter: stable` evita que o surgimento da barra
+   estreite o container e dispare um novo cálculo de colunas (layout piscando). */
 .vr-pbl-students {
-  width: 100%; height: 100%; overflow-y: auto; align-content: flex-start;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;
+  width: 100%; height: 100%; overflow-y: auto; scrollbar-gutter: stable;
+  display: grid; grid-auto-rows: minmax(64px, 1fr); align-content: stretch;
+  place-items: center; gap: 6px;
 }
+/* O tile preenche a célula mantendo 16:10 — é a mesma proporção que useFittedCols
+   assume ao escolher as colunas. Sem isto a célula estica e achata o vídeo. */
 .vr-pbl-tile {
-  position: relative; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden;
+  position: relative; aspect-ratio: 16 / 10; height: 100%; width: auto; max-width: 100%;
+  min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden;
   background: var(--vr-surface); border: 3px solid var(--vr-danger);   /* 🔴 fora do pacote */
 }
 .vr-pbl-tile[data-pkg="in"] { border-color: #22c55e; }                  /* 🟢 dentro do pacote */
@@ -642,15 +659,15 @@
 .vr-pbl-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--vr-text-dim); font-size: 13px; padding: 40px 0; }
 @media (max-width: 768px) {
   .vr-stage[data-pbl="1"] { flex-direction: column; }
-  .vr-pbl-students { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
   .vr-pbl-code-huge { font-size: 48px; }
   .vr-pbl-code-big { padding: 28px 32px; }
 }
 
-/* ===================== Barra "Próxima atividade" + apresentação ===================== */
+/* ===================== Barra "Atividade atual" + apresentação ===================== */
+/* Vive no header: `margin: 0 auto` a centra entre a marca e os controles. */
 .vr-actbar {
-  display: flex; align-items: center; gap: 12px; align-self: center;
-  margin: 0 12px 8px; padding: 6px 8px 6px 16px;
+  display: flex; align-items: center; gap: 10px; align-self: center; flex: none;
+  margin: 0 auto; padding: 4px 6px 4px 14px;
   background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 12px;
   box-shadow: var(--vr-shadow);
 }
@@ -658,7 +675,7 @@
 .vr-actbar-cap { font-size: 10px; color: var(--vr-text-dim); font-weight: 600; }
 .vr-actbar-name { font-size: 14px; font-weight: 700; color: var(--vr-text); }
 .vr-actbar-next {
-  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
   background: #22c55e; border: none; color: #fff; cursor: pointer;
 }
 .vr-actbar-next:hover { background: #16a34a; }
@@ -683,8 +700,11 @@
 .vr-present-share video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 /* Coluna dos alunos (metade direita) */
 .vr-pbl-students-col { flex: 1; min-width: 0; min-height: 0; }
-.vr-pbl-students-col .vr-pbl-students { height: 100%; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.vr-pbl-students-col .vr-pbl-students { height: 100%; }
 @media (max-width: 1000px) {
   .vr-pbl-main { flex-direction: column; }
   .vr-pbl-students-col { flex: 0 0 40%; }
+  /* Sem largura para 3 colunas: a do facilitador vira uma faixa no topo. */
+  .vr-stage:has(.vr-pbl-side) { flex-direction: column; }
+  .vr-pbl-side { width: auto; flex: 0 0 auto; }
 }

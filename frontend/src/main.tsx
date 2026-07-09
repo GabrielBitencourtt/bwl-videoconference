@@ -24,9 +24,10 @@ const ClientApp = lazy(() => import("./client/ClientApp"));
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const wsBase = import.meta.env.VITE_WS_BASE || "ws://localhost:8000";
 
-// Host/app SDK: identity + tenant come from the portal session cookie (same-origin),
-// not from spoofable X-User-* headers. The backend reads `client_session`.
-const sdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}) });
+// Host/app SDK: identity + tenant come from the portal session cookie, not from
+// spoofable X-User-* headers. The backend reads `client_session`. Em dev o apiBase
+// fica em outra origem (:8000), então o cookie só viaja com credentials "include".
+const sdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}), credentials: "include" });
 
 /** Guests join via invite token — no host auth headers. */
 const guestSdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}) });
@@ -129,16 +130,6 @@ function Home() {
           <h1>Olá, {firstName} 👋</h1>
           <p className="app-sub">Crie uma sala e convide participantes em segundos.</p>
         </section>
-
-        <div className="app-stats">
-          <div className="app-stat"><span className="app-stat-v">{me.license?.plan || "—"}</span><span className="app-stat-l">Plano</span></div>
-          <div className="app-stat" data-warn={atLimit ? "1" : undefined}>
-            <span className="app-stat-v">{activeCount}{roomCap != null ? <span className="app-stat-cap"> / {roomCap}</span> : <span className="app-stat-cap"> / ∞</span>}</span>
-            <span className="app-stat-l">Salas ativas</span>
-          </div>
-          <div className="app-stat"><span className="app-stat-v">{limits?.max_participants ?? "—"}</span><span className="app-stat-l">Máx. por sala</span></div>
-          <div className="app-stat"><span className="app-stat-v">{limits?.recording_enabled ? "Sim" : "Não"}</span><span className="app-stat-l">Gravação</span></div>
-        </div>
 
         <div className="app-create">
           <button className="app-btn app-btn-create" disabled={atLimit} onClick={() => setShowModal(true)}>

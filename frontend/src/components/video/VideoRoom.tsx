@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback, lazy, Suspense, type ReactNode } from "react";
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, useParticipants, useTrackToggle, useRoomContext,
@@ -571,6 +571,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // confirm() nativo é bloqueado em iframe cross-origin (embed) → modal in-app.
   const doEndRoom = () => { sdk.rooms.end(roomId).catch(() => {}); setConfirmEnd(false); };
 
+  // Facilitador com a aula OpenPBL ativa: ganha a coluna esquerda (câmera + código
+  // + apresentação). Sem a turma criada ainda, cai no layout comum de alunos.
+  const pblHost = !!(scorm && isStaff && pblRoster?.activity_id);
+
   return (
     <>
       <header className="vr-header">
@@ -580,20 +584,39 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             : <div className="vr-logo">V</div>}
           <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>
         </div>
-        <div className="vr-meta">
-          <span>{elapsed}</span>
-          <span className="vr-dot" />
-          <span><span className="vr-count-label">participantes: </span>{participants.length}</span>
-          {recording && <span className="vr-rec">REC</span>}
-          {isStaff && (
-            <button className="vr-end-btn" onClick={() => setConfirmEnd(true)} title="Encerrar a sala para todos">Encerrar sala</button>
-          )}
+
+        {/* Barra do facilitador, centrada entre a marca e os controles. */}
+        {pblHost && (
+          <ActivityBar label={pblStep} onNext={() => presentationPost("next")} presenting={presenting} onPresent={togglePresent} />
+        )}
+
+        {/* Canto superior direito: controles da chamada (antes eram uma pílula
+            centralizada no rodapé), cronômetro/contagem e Encerrar sala. */}
+        <div className="vr-header-right">
+          <ControlBar
+            isStaff={isStaff}
+            scorm={scorm}
+            panel={panel}
+            setPanel={setPanel}
+            onOpenSettings={() => setSettingsOpen(true)}
+            settingsActive={settingsOpen}
+            peopleCount={participants.length}
+            boardActive={showBoard}
+            onToggleBoard={toggleBoard}
+            recording={recording}
+            onToggleRecording={toggleRecording}
+          />
+          <div className="vr-meta">
+            <span>{elapsed}</span>
+            <span className="vr-dot" />
+            <span><span className="vr-count-label">participantes: </span>{participants.length}</span>
+            {recording && <span className="vr-rec">REC</span>}
+            {isStaff && (
+              <button className="vr-end-btn" onClick={() => setConfirmEnd(true)} title="Encerrar a sala para todos">Encerrar sala</button>
+            )}
+          </div>
         </div>
       </header>
-
-      {scorm && isStaff && pblRoster?.activity_id && (
-        <ActivityBar label={pblStep} onNext={() => presentationPost("next")} presenting={presenting} onPresent={togglePresent} />
-      )}
 
       {breakout.isStaff
         ? <BreakoutHostBar roomId={roomId} active={breakout.active} message={breakout.message} onEnter={breakout.enter} onLeave={breakout.leave} />
@@ -606,19 +629,21 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
         )}
 
-      <div className="vr-stage" data-pbl={scorm ? "1" : undefined}>
+      {/* Facilitador: coluna própria à esquerda (câmera + class code no topo,
+          apresentação abaixo). Só então o chat pode abrir à direita, e a grade
+          de alunos fica com todo o centro. O aluno mantém o layout espelhado. */}
+      <div className="vr-stage" data-pbl={scorm && !pblHost ? "1" : undefined}>
+        {pblHost && (
+          <aside className="vr-pbl-side">
+            <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />
+            <div className="vr-pbl-present-big" ref={presentElRef}>
+              <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+            </div>
+          </aside>
+        )}
         <div className="vr-grid-wrap">
           {scorm
-            ? (isStaff && pblRoster?.activity_id
-                ? <div className="vr-pbl-main">
-                    <div className="vr-pbl-present-big" ref={presentElRef}>
-                      <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
-                    </div>
-                    <div className="vr-pbl-students-col">
-                      <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
-                    </div>
-                  </div>
-                : <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />)
+            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
             : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
@@ -650,7 +675,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
-            {scorm && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
+            {scorm && !pblHost && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -664,20 +689,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         )}
       </div>
-
-      <ControlBar
-        isStaff={isStaff}
-        scorm={scorm}
-        panel={panel}
-        setPanel={setPanel}
-        onOpenSettings={() => setSettingsOpen(true)}
-        settingsActive={settingsOpen}
-        peopleCount={participants.length}
-        boardActive={showBoard}
-        onToggleBoard={toggleBoard}
-        recording={recording}
-        onToggleRecording={toggleRecording}
-      />
 
       {settingsOpen && isStaff && (
         <div className="vr-sheet-backdrop" onClick={() => setSettingsOpen(false)}>
@@ -772,13 +783,13 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
   );
 }
 
-/** Barra "Próxima atividade ▶" (topo) — só o facilitador avança a apresentação
+/** Barra "Atividade atual ▶" (topo) — só o facilitador avança a apresentação
  *  e a transmite aos alunos (recorte da própria aba). */
 function ActivityBar({ label, onNext, presenting, onPresent }: { label: string; onNext: () => void; presenting?: boolean; onPresent?: () => void }) {
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
-        <span className="vr-actbar-cap">Próxima atividade</span>
+        <span className="vr-actbar-cap">Atividade atual</span>
         <span className="vr-actbar-name">{label || "Apresentação"}</span>
       </div>
       {onPresent && (
@@ -795,6 +806,43 @@ function ActivityBar({ label, onNext, presenting, onPresent }: { label: string; 
       </button>
     </div>
   );
+}
+
+/** Nº de colunas que faz os `count` tiles preencherem melhor o container.
+ *  Sem isto o grid usa uma largura mínima fixa: com muitos alunos ele estoura
+ *  em linhas e vira uma pilha rolável em vez de distribuir no espaço livre. */
+const TILE_RATIO = 16 / 10;
+const TILE_GAP = 6;   // precisa casar com o `gap` de .vr-pbl-students (room.css)
+
+function useFittedCols(count: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [cols, setCols] = useState(1);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || count === 0) return;
+    const compute = () => {
+      const { width: W, height: H } = el.getBoundingClientRect();
+      if (W <= 0 || H <= 0) return;
+      let best = 1;
+      let bestSide = 0;
+      for (let c = 1; c <= count; c++) {
+        const rows = Math.ceil(count / c);
+        const tw = (W - TILE_GAP * (c - 1)) / c;
+        const th = (H - TILE_GAP * (rows - 1)) / rows;
+        // lado útil do tile respeitando 16:10 — o maior vence
+        const side = Math.min(tw, th * TILE_RATIO);
+        if (side > bestSide) { bestSide = side; best = c; }
+      }
+      setCols(best);
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [count]);
+
+  return { ref, cols };
 }
 
 /** Grade dos ALUNOS (área principal, à direita) com borda de status:
@@ -819,8 +867,15 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip }: { r
 
   const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity));
 
+  // O strip é uma faixa horizontal rolável; só a grade cheia se ajusta ao espaço.
+  const { ref: gridRef, cols } = useFittedCols(strip ? 0 : studentTiles.length);
+
   const grid = (
-    <div className={strip ? "vr-pbl-students vr-pbl-students--strip" : "vr-pbl-students"}>
+    <div
+      ref={gridRef}
+      className={strip ? "vr-pbl-students vr-pbl-students--strip" : "vr-pbl-students"}
+      style={strip ? undefined : { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+    >
       {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
       {studentTiles.map((t) => {
         const st = byId[t.participant.identity];
@@ -1283,63 +1338,77 @@ function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsA
 
   return (
     <div className="vr-controls">
-      <div className="vr-pill">
-        <button className="vr-ctrl" data-off={!mic.enabled} onClick={() => mic.toggle()} disabled={mic.pending} title="Microfone">
-          {mic.enabled ? I.mic : I.micOff}
-        </button>
-        <button className="vr-ctrl" data-off={!cam.enabled} onClick={() => cam.toggle()} disabled={cam.pending} title="Câmera">
-          {cam.enabled ? I.cam : I.camOff}
-        </button>
-        <button className="vr-ctrl" data-active={screen.enabled} onClick={() => screen.toggle()} disabled={screen.pending} title="Compartilhar tela">
-          {I.screen}
-        </button>
-        <button className="vr-ctrl" data-active={boardActive} onClick={onToggleBoard} title="Quadro branco">
-          {I.board}
-        </button>
-        {isStaff && (
-          <button
-            className="vr-ctrl vr-rec-btn"
-            data-active={recording}
-            onClick={onToggleRecording}
-            title={recording ? "Parar gravação" : "Iniciar gravação"}
-          >
-            {recording ? I.stop : I.record}
-          </button>
+      <Ctrl label="Microfone" icon={mic.enabled ? I.mic : I.micOff} title={mic.enabled ? "Desligar microfone" : "Ligar microfone"}
+        off={!mic.enabled} disabled={mic.pending} onClick={() => mic.toggle()} />
+      <Ctrl label="Câmera" icon={cam.enabled ? I.cam : I.camOff} title={cam.enabled ? "Desligar câmera" : "Ligar câmera"}
+        off={!cam.enabled} disabled={cam.pending} onClick={() => cam.toggle()} />
+      <Ctrl label="Compartilhar" icon={I.screen} title="Compartilhar tela"
+        active={screen.enabled} disabled={screen.pending} onClick={() => screen.toggle()} />
+      {isStaff && (
+        <Ctrl label="Gravar" icon={recording ? I.stop : I.record} className="vr-rec-btn"
+          title={recording ? "Parar gravação" : "Iniciar gravação"}
+          active={recording} onClick={onToggleRecording} />
+      )}
+
+      <div className="vr-sep" />
+
+      <Ctrl label="Chat" icon={I.chat} active={panel === "chat"}
+        onClick={() => setPanel(panel === "chat" ? null : "chat")} />
+      {isStaff && (
+        <Ctrl label="Grupos" icon={I.groups} active={panel === "breakout"}
+          onClick={() => setPanel(panel === "breakout" ? null : "breakout")} />
+      )}
+
+      {/* Participantes e quadro branco saíram da barra e vivem aqui — sem isto os
+          alunos, que não veem "Grupos"/OpenPBL, perderiam acesso aos recursos. */}
+      <div className="vr-ctrl-more">
+        <Ctrl label="Mais" icon={I.more} title="Mais (participantes, quadro, configurações)"
+          active={moreOpen || panel === "people" || panel === "scorm" || settingsActive || boardActive}
+          onClick={() => setMoreOpen((o) => !o)} />
+        {moreOpen && (
+          <>
+            <div className="vr-menu-backdrop" onClick={() => setMoreOpen(false)} />
+            <div className="vr-ctrl-menu">
+              <button onClick={() => { setPanel(panel === "people" ? null : "people"); setMoreOpen(false); }}>
+                {I.people} Participantes ({peopleCount})
+              </button>
+              <button onClick={() => { onToggleBoard(); setMoreOpen(false); }}>
+                {I.board} {boardActive ? "Fechar quadro" : "Quadro branco"}
+              </button>
+              {scorm && isStaff && <button onClick={() => { setPanel("scorm"); setMoreOpen(false); }}>{I.board} OpenPBL</button>}
+              <button onClick={() => { onOpenSettings(); setMoreOpen(false); }}>{I.gear} Configurações</button>
+            </div>
+          </>
         )}
-        <div className="vr-sep" />
-        <button className="vr-ctrl" data-active={panel === "chat"} onClick={() => setPanel(panel === "chat" ? null : "chat")} title="Chat">
-          {I.chat}
-        </button>
-        <button className="vr-ctrl vr-ctrl-badge" data-active={panel === "people"} data-count={peopleCount} onClick={() => setPanel(panel === "people" ? null : "people")} title="Participantes">
-          {I.people}
-        </button>
-        {isStaff && (
-          <button className="vr-ctrl" data-active={panel === "breakout"} onClick={() => setPanel(panel === "breakout" ? null : "breakout")} title="Grupos">
-            {I.groups}
-          </button>
-        )}
-        {isStaff && (
-          <div className="vr-ctrl-more">
-            <button className="vr-ctrl" data-active={moreOpen || panel === "scorm" || settingsActive} onClick={() => setMoreOpen((o) => !o)} title="Mais (OpenPBL, Configurações)">
-              {I.more}
-            </button>
-            {moreOpen && (
-              <>
-                <div className="vr-menu-backdrop" onClick={() => setMoreOpen(false)} />
-                <div className="vr-ctrl-menu">
-                  {scorm && <button onClick={() => { setPanel("scorm"); setMoreOpen(false); }}>{I.board} OpenPBL</button>}
-                  <button onClick={() => { onOpenSettings(); setMoreOpen(false); }}>{I.gear} Configurações</button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        <div className="vr-sep" />
-        <button className="vr-ctrl" data-leave="true" onClick={() => room.disconnect()} title="Sair">
-          {I.phone}
-        </button>
       </div>
+
+      <div className="vr-sep" />
+
+      <Ctrl label="Sair" icon={I.phone} leave onClick={() => room.disconnect()} />
     </div>
+  );
+}
+
+/** Botão da barra: ícone com a descrição embaixo (igual ao mockup). */
+function Ctrl({ label, icon, onClick, title, disabled, off, active, leave, className }: {
+  label: string; icon: ReactNode; onClick: () => void;
+  title?: string; disabled?: boolean; off?: boolean; active?: boolean; leave?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={`vr-ctrl${className ? ` ${className}` : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+      title={title ?? label}
+      data-off={off || undefined}
+      data-active={active || undefined}
+      data-leave={leave || undefined}
+    >
+      <span className="vr-ctrl-ico">{icon}</span>
+      <span className="vr-ctrl-lbl">{label}</span>
+    </button>
   );
 }
 

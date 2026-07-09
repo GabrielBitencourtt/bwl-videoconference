@@ -19,6 +19,13 @@ export interface SDKOptions {
   apiBase: string;
   wsBase?: string;
   headers?: () => Headers;
+  /**
+   * "include" envia o cookie de sessão mesmo quando o apiBase está em outra
+   * origem (dev: :5173 → :8000). Só use nas rotas autenticadas do portal: uma
+   * requisição credenciada é rejeitada pelo navegador se o backend responder
+   * `Access-Control-Allow-Origin: *`, como acontece no embed/convidado.
+   */
+  credentials?: RequestCredentials;
 }
 
 export interface Room {
@@ -119,6 +126,7 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
   async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     const res = await fetch(`${opts.apiBase}${path}`, {
       ...init,
+      credentials: opts.credentials,
       headers: {
         "Content-Type": "application/json",
         ...(opts.headers?.() ?? {}),
@@ -208,6 +216,7 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
         fd.append("file", file);
         const res = await fetch(`${opts.apiBase}/api/backgrounds`, {
           method: "POST",
+          credentials: opts.credentials,
           headers: { ...(opts.headers?.() ?? {}) }, // no Content-Type → browser sets multipart boundary
           body: fd,
         });

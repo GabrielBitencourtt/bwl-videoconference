@@ -158,6 +158,21 @@ body {
   .app-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* ---------- Toggle switch ----------
+   Definição única do produto: o modal e a sala compartilham esta chave.
+   Duplicar `.tg` em modal.css/room.css fazia `left` e `transform` de folhas
+   diferentes se somarem, jogando o knob para fora do trilho. */
+.tg {
+  width: 38px; height: 22px; border-radius: 999px; border: none; cursor: pointer;
+  position: relative; flex: none; background: var(--app-border); transition: background .15s;
+}
+.tg[data-on="true"] { background: var(--brand-accent); }
+.tg::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; transition: transform .15s;
+}
+.tg[data-on="true"]::after { transform: translateX(16px); }
+
 /* ---------- Gate / guest card ---------- */
 .app-gate {
   width: min(420px, 92%); padding: 28px; display: flex; flex-direction: column; gap: 14px; text-align: center;

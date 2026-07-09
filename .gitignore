@@ -35,6 +35,10 @@ infra/deploy/livekit/.env
 *.p12
 *.pfx
 
+# ---------- Dev local sem Docker (binários e cluster baixados sob demanda) ----------
+infra/pg/
+infra/livekit/
+
 # ---------- OS / editor ----------
 .DS_Store
 Thumbs.db

@@ -11,6 +11,11 @@ from ..tenancy import resolve_tenant_id, get_effective_limits, normalize_brandin
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
+# Política fixa de criação de sala. O modal não expõe estes campos, mas esconder na
+# UI não basta: sem forçar aqui, qualquer um os alteraria chamando POST /api/rooms
+# pelo console do navegador. A licença ainda pode apertar o teto de participantes.
+ROOM_MAX_PARTICIPANTS = 35
+
 
 def _row_to_room(r) -> dict:
     d = dict(r)
@@ -39,7 +44,8 @@ async def create_room(
         )
         if active >= limits["max_rooms"]:
             raise HTTPException(403, f"limite de salas ativas da licença atingido ({limits['max_rooms']})")
-    max_participants = min(body.max_participants, limits["max_participants"])
+    cap = limits["max_participants"]
+    max_participants = min(ROOM_MAX_PARTICIPANTS, cap) if cap and cap > 0 else ROOM_MAX_PARTICIPANTS
     auto_record = body.auto_record and limits["recording_enabled"]
 
     room_id = f"room_{secrets.token_urlsafe(8)}"
@@ -55,9 +61,10 @@ async def create_room(
         RETURNING *
         """,
         tenant_id, room_id, body.title, body.description, user.id, max_participants, body.is_public,
-        auto_record, body.lobby_enabled, body.lobby_timer_title, body.lobby_timer_seconds,
-        body.lobby_bg_video, body.lobby_auto_admit, guest_token,
-        body.allow_camera, body.allow_mic, body.allow_screen_share, body.allow_whiteboard_edit,
+        # Saguão e edição de quadro ficam desligados: os controles saíram do modal e o
+        # corpo da requisição é ignorado, então não há como religá-los pelo cliente.
+        auto_record, False, None, 300, None, False, guest_token,
+        body.allow_camera, body.allow_mic, body.allow_screen_share, False,
         body.scheduled_at, body.external_ref, body.require_email, body.openpbl_activity_id,
     )
     return _row_to_room(row)

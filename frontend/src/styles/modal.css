@@ -1,79 +1,74 @@
-/* New Room modal — light surface, red accent (matches the product mockups). */
-:root {
-  --nrm-red: #e11d2a;
-  --nrm-red-dark: #b91622;
-}
+/* New Room modal — usa os tokens --app-* / --brand-* de app.css,
+   para o modal ficar no mesmo layout escuro do resto da aplicação. */
 
 .nrm-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
   display: grid; place-items: center; z-index: 100; padding: 16px;
   backdrop-filter: blur(2px);
 }
 .nrm {
   width: min(560px, 100%); max-height: 92vh; overflow-y: auto;
-  background: #fff; color: #1a1d23; border-radius: 16px; padding: 24px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
-  font-family: "Inter", system-ui, sans-serif;
+  background: var(--app-surface); color: var(--app-text);
+  border: 1px solid var(--app-border); border-radius: var(--app-radius);
+  padding: 24px; box-shadow: var(--app-shadow); font-family: inherit;
 }
 .nrm-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.nrm-head h2 { margin: 0; font-size: 20px; font-weight: 700; }
-.nrm-x { background: none; border: none; cursor: pointer; font-size: 24px; color: #9aa1ad; line-height: 1; padding: 0 4px; }
-.nrm-x:hover { color: #1a1d23; }
+.nrm-head h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.nrm-x { background: none; border: none; cursor: pointer; font-size: 24px; color: var(--app-text-dim); line-height: 1; padding: 0 4px; }
+.nrm-x:hover { color: var(--app-text); }
 
-.nrm-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #2b2f36; margin: 16px 0 6px; }
+.nrm-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--app-text); margin: 16px 0 6px; }
 .nrm-input {
-  width: 100%; border: 1px solid #d9dce1; border-radius: 10px; padding: 11px 13px;
-  font-size: 15px; outline: none; color: #1a1d23; background: #fff; font-family: inherit;
+  width: 100%; border: 1px solid var(--app-border); border-radius: 10px; padding: 11px 13px;
+  font-size: 15px; outline: none; color: var(--app-text); background: var(--app-bg); font-family: inherit;
 }
-.nrm-input:focus { border-color: var(--nrm-red); box-shadow: 0 0 0 3px rgba(225, 29, 42, 0.12); }
-.nrm-input::placeholder { color: #aab1bb; }
+.nrm-input:focus { border-color: var(--brand-accent); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
+.nrm-input::placeholder { color: var(--app-text-dim); }
 
 .nrm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; }
 .nrm-row-text { font-size: 15px; font-weight: 600; }
-.nrm-row-sub { font-size: 12px; color: #8a909a; font-weight: 400; margin-top: 2px; }
+.nrm-row-sub { font-size: 12px; color: var(--app-text-dim); font-weight: 400; margin-top: 2px; }
 
-.nrm-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-top: 10px; }
+.nrm-card { background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 12px; padding: 16px; margin-top: 10px; }
 .nrm-card-title { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; }
-.nrm-card-sub { font-size: 12px; color: #8a909a; margin: 2px 0 12px; }
-.nrm-perms { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 12px; }
+.nrm-card-sub { font-size: 12px; color: var(--app-text-dim); margin: 2px 0 12px; }
+/* Coluna única: as chaves alinham à direita, no mesmo eixo das de .nrm-row acima. */
+.nrm-perms { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 12px; }
 .nrm-perm { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.nrm-perm span { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: #2b2f36; }
-.nrm-hint { font-size: 12px; color: #8a909a; margin-top: 5px; }
+.nrm-perm span { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--app-text); }
+.nrm-hint { font-size: 12px; color: var(--app-text-dim); margin-top: 5px; }
 
 .nrm-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
-.nrm-btn-cancel { background: #fff; border: 1px solid #d9dce1; border-radius: 10px; padding: 11px 20px; font-weight: 600; cursor: pointer; color: #2b2f36; }
-.nrm-btn-cancel:hover { background: #f5f6f8; }
-.nrm-btn-create { background: var(--nrm-red); color: #fff; border: none; border-radius: 10px; padding: 11px 22px; font-weight: 700; cursor: pointer; }
-.nrm-btn-create:hover { background: var(--nrm-red-dark); }
-.nrm-btn-create:disabled { opacity: 0.6; cursor: default; }
+.nrm-btn-cancel {
+  background: none; border: 1px solid var(--app-border); border-radius: 10px;
+  padding: 11px 20px; font-weight: 600; cursor: pointer; color: var(--app-text-dim); font-family: inherit; font-size: 15px;
+}
+.nrm-btn-cancel:hover { background: var(--app-surface-2); color: var(--app-text); }
+.nrm-btn-create {
+  background: var(--brand-accent); color: #fff; border: none; border-radius: 10px;
+  padding: 11px 22px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 15px;
+  transition: background .15s;
+}
+.nrm-btn-create:hover { background: var(--brand-accent-hover); }
+.nrm-btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
+.nrm-btn-create:disabled:hover { background: var(--brand-accent); }
 
 /* Background video chooser + gallery picker */
 .nrm-bgbtn {
   width: 100%; display: flex; align-items: center; gap: 8px;
-  border: 1px solid #d9dce1; border-radius: 10px; padding: 11px 13px;
-  background: #fff; cursor: pointer; font-size: 15px; color: #2b2f36; text-align: left;
+  border: 1px solid var(--app-border); border-radius: 10px; padding: 11px 13px;
+  background: var(--app-bg); cursor: pointer; font-size: 15px; color: var(--app-text);
+  text-align: left; font-family: inherit;
 }
-.nrm-bgbtn:hover { border-color: var(--nrm-red); }
+.nrm-bgbtn:hover { border-color: var(--brand-accent); }
 .nrm-bgpreview { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-top: 8px; background: #000; }
 
 .bgp { width: min(680px, 100%); }
 .bgp-actions { display: flex; justify-content: flex-end; margin-bottom: 14px; }
-.bgp-error { color: var(--nrm-red); font-size: 13px; margin-bottom: 10px; }
-.bgp-empty { text-align: center; color: #8a909a; padding: 44px 0; font-size: 14px; line-height: 1.7; }
+.bgp-error { color: #f87171; font-size: 13px; margin-bottom: 10px; }
+.bgp-empty { text-align: center; color: var(--app-text-dim); padding: 44px 0; font-size: 14px; line-height: 1.7; }
 .bgp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-height: 52vh; overflow: auto; padding: 2px; }
-.bgp-item { border: 2px solid #e5e7eb; border-radius: 10px; overflow: hidden; cursor: pointer; background: #000; padding: 0; }
-.bgp-item[data-sel="true"] { border-color: var(--nrm-red); }
+.bgp-item { border: 2px solid var(--app-border); border-radius: 10px; overflow: hidden; cursor: pointer; background: #000; padding: 0; }
+.bgp-item[data-sel="true"] { border-color: var(--brand-accent); }
 .bgp-item video { width: 100%; height: 90px; object-fit: cover; background: #000; display: block; }
-.bgp-name { display: block; font-size: 11px; color: #fff; background: #1a1d23; padding: 6px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* Toggle switch */
-.tg {
-  width: 44px; height: 26px; border-radius: 13px; background: #cdd2d9;
-  position: relative; cursor: pointer; border: none; flex: none; transition: background 0.15s;
-}
-.tg[data-on="true"] { background: var(--nrm-red); }
-.tg::after {
-  content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
-  border-radius: 50%; background: #fff; transition: left 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,.2);
-}
-.tg[data-on="true"]::after { left: 21px; }
+.bgp-name { display: block; font-size: 11px; color: var(--app-text); background: var(--app-surface-2); padding: 6px 8px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
