@@ -96,7 +96,11 @@ export interface OpenPblClass {
   checking_open?: boolean;
   released_dimensions?: boolean;   // gate Riscos
   released?: boolean;              // gate Percepções
+  code_hidden?: boolean;
+  stage?: OpenPblStage;            // sequenciamento do ▶
 }
+
+export type OpenPblStage = "presentation" | "close" | "risks" | "perceptions" | "done";
 
 export interface BreakoutMember { identity: string; display_name: string }
 export interface BreakoutGroup {
@@ -243,6 +247,11 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       /** (Re)cria os breakouts a partir dos grupos montados pela API OpenPBL. */
       syncGroups: (roomId: string) =>
         call<{ ok: boolean; groups: number }>(`/api/rooms/${roomId}/openpbl/sync-groups`, { method: "POST" }),
+      /** Move o cursor da etapa do facilitador (botão verde ▶). */
+      setStage: (roomId: string, stage: OpenPblStage) =>
+        call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/stage`, {
+          method: "POST", body: JSON.stringify({ stage }),
+        }),
       /** Dados do gráfico radar do Questionário de Riscos (agregado por grupo). */
       riskChart: (roomId: string) =>
         call<{ available: boolean; reason?: string; chart?: { dimensions: string[]; baseGrades: number[]; groupAverageGrades: number[]; groups: { grades: number[] }[] } }>(

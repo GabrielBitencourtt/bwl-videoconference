@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS video_rooms (
   require_email BOOLEAN NOT NULL DEFAULT false, -- ask guests for e-mail (SCORM/OpenPBL)
   openpbl_activity_id TEXT,                      -- aula OpenPBL: auto-gera class-code
   openpbl_dimensions_id TEXT,                    -- aula OpenPBL: dimensionsId p/ o gráfico de riscos
+  -- (a coluna `stage` do sequenciamento fica em video_room_openpbl_class)
   breakout_open BOOLEAN NOT NULL DEFAULT false,  -- grupos (breakout) abertos?
   breakout_ends_at TIMESTAMPTZ,                  -- retorno automático dos grupos
   breakout_mode TEXT NOT NULL DEFAULT 'auto',    -- auto | manual | self
@@ -186,5 +187,7 @@ CREATE TABLE IF NOT EXISTS video_room_openpbl_class (
   checking_open BOOLEAN NOT NULL DEFAULT true,
   released_dimensions BOOLEAN NOT NULL DEFAULT false,
   released BOOLEAN NOT NULL DEFAULT false,
+  code_hidden BOOLEAN NOT NULL DEFAULT false,   -- facilitador ocultou o class-code (migration 010)
+  stage TEXT NOT NULL DEFAULT 'presentation',   -- sequenciamento do ▶ (migration 012)
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

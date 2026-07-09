@@ -8,7 +8,7 @@ import "@livekit/components-styles";
 import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
 import { applyBranding, type Branding } from "../../lib/branding";
-import type { BreakoutState, BreakoutGroup } from "../../lib/video-rooms-sdk";
+import type { BreakoutState, BreakoutGroup, OpenPblStage } from "../../lib/video-rooms-sdk";
 import RoomChat from "./RoomChat";
 import LobbyPanel from "./LobbyPanel";
 import RemoteControlEnforcer from "./RemoteControlEnforcer";
@@ -575,6 +575,39 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // + apresentação). Sem a turma criada ainda, cai no layout comum de alunos.
   const pblHost = !!(scorm && isStaff && pblRoster?.activity_id);
 
+  // Sequenciamento do facilitador (botão verde ▶): estado da aula OpenPBL + etapa.
+  const [pblClass, setPblClass] = useState<any | null>(null);
+  useEffect(() => {
+    if (!scorm) return;
+    sdk.openpbl.classState(roomId).then(setPblClass).catch(() => {});
+    return sdk.subscribe(roomId, (event, payload) => {
+      if (event === "openpbl-class") setPblClass(payload);
+    });
+  }, [scorm, roomId]);
+  const pblStage: OpenPblStage = (pblClass?.stage as OpenPblStage) || "presentation";
+  const chartAvailable = pblStage === "risks" || pblStage === "perceptions" || pblStage === "done";
+  const [chartHidden, setChartHidden] = useState(false);
+  const [stageBusy, setStageBusy] = useState(false);
+
+  const STAGE_ORDER: OpenPblStage[] = ["presentation", "close", "risks", "perceptions", "done"];
+  const advanceStage = async () => {
+    const i = STAGE_ORDER.indexOf(pblStage);
+    const next = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)];
+    if (next === pblStage) return;
+    if (pblStage === "presentation" && presenting) await togglePresent();  // fecha a transmissão ao sair da apresentação
+    try { setPblClass(await sdk.openpbl.setStage(roomId, next)); } catch { /* */ }
+  };
+  const doStageAction = async () => {
+    setStageBusy(true);
+    try {
+      if (pblStage === "presentation") await togglePresent();
+      else if (pblStage === "close") { await sdk.openpbl.closeRegistration(roomId); await sdk.openpbl.syncGroups(roomId).catch(() => {}); }
+      else if (pblStage === "risks") await sdk.openpbl.release(roomId, "risks");
+      else if (pblStage === "perceptions") await sdk.openpbl.release(roomId, "perceptions");
+    } catch { /* silencioso: o painel OpenPBL mostra erros detalhados */ }
+    finally { setStageBusy(false); }
+  };
+
   return (
     <>
       <header className="vr-header">
@@ -585,9 +618,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>
         </div>
 
-        {/* Barra do facilitador, centrada entre a marca e os controles. */}
+        {/* Barra do facilitador (sequenciador ▶), centrada entre a marca e os controles. */}
         {pblHost && (
-          <ActivityBar label={pblStep} onNext={() => presentationPost("next")} presenting={presenting} onPresent={togglePresent} />
+          <ActivityBar
+            stage={pblStage} cls={pblClass} presenting={presenting} busy={stageBusy}
+            onAction={doStageAction} onAdvance={advanceStage}
+            chartAvailable={chartAvailable} chartHidden={chartHidden}
+            onToggleChart={() => setChartHidden((h) => !h)}
+          />
         )}
 
         {/* Canto superior direito: controles da chamada (antes eram uma pílula
@@ -636,9 +674,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {pblHost && (
           <aside className="vr-pbl-side">
             <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />
-            <div className="vr-pbl-present-big" ref={presentElRef}>
-              <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
-            </div>
+            {pblStage === "presentation" ? (
+              // Etapa 1: apresentação embutida (fecha ao avançar de etapa).
+              <div className="vr-pbl-present-big" ref={presentElRef}>
+                <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+              </div>
+            ) : (chartAvailable && !chartHidden) ? (
+              // Riscos em diante: gráfico radar (live), ocultável pelo facilitador.
+              <div className="vr-pbl-present-big">
+                <RiskChart roomId={roomId} />
+              </div>
+            ) : null}
           </aside>
         )}
         <div className="vr-grid-wrap">
@@ -783,27 +829,151 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
   );
 }
 
-/** Barra "Atividade atual ▶" (topo) — só o facilitador avança a apresentação
- *  e a transmite aos alunos (recorte da própria aba). */
-function ActivityBar({ label, onNext, presenting, onPresent }: { label: string; onNext: () => void; presenting?: boolean; onPresent?: () => void }) {
+/** Sequenciador do facilitador (barra "Etapa atual ▶"): cada etapa troca a ação
+ *  e o conteúdo da área da esquerda. O ▶ avança para a próxima etapa. */
+const STAGE_LABELS: Record<OpenPblStage, string> = {
+  presentation: "Apresentação",
+  close: "Encerrar registro",
+  risks: "Questionário de Riscos",
+  perceptions: "Questionário de Percepções",
+  done: "Aula concluída",
+};
+
+function stageAction(stage: OpenPblStage, cls: any, presenting: boolean): { label: string; done: boolean; danger?: boolean } | null {
+  switch (stage) {
+    case "presentation":
+      return { label: presenting ? "Parar transmissão" : "Apresentar aos alunos", done: false, danger: presenting };
+    case "close":
+      return { label: cls?.checking_open === false ? "✓ Registro encerrado" : "Encerrar Registro", done: cls?.checking_open === false };
+    case "risks":
+      return { label: cls?.released_dimensions ? "✓ Riscos liberado" : "Liberar Questionário de Riscos", done: !!cls?.released_dimensions };
+    case "perceptions":
+      return { label: cls?.released ? "✓ Percepções liberado" : "Liberar Questionário de Percepções", done: !!cls?.released };
+    default:
+      return null;
+  }
+}
+
+function ActivityBar({ stage, cls, presenting, busy, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
+  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean;
+  onAction: () => void; onAdvance: () => void;
+  chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
+}) {
+  const act = stageAction(stage, cls, presenting);
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
-        <span className="vr-actbar-cap">Atividade atual</span>
-        <span className="vr-actbar-name">{label || "Apresentação"}</span>
+        <span className="vr-actbar-cap">Etapa atual</span>
+        <span className="vr-actbar-name">{STAGE_LABELS[stage]}</span>
       </div>
-      {onPresent && (
-        <button
-          className={presenting ? "vr-actbar-present is-on" : "vr-actbar-present"}
-          onClick={onPresent}
-          title={presenting ? "Parar de transmitir aos alunos" : "Transmitir a apresentação aos alunos"}
-        >
-          {presenting ? "Parar transmissão" : "Apresentar aos alunos"}
+      {chartAvailable && (
+        <button className="vr-actbar-ghost" onClick={onToggleChart} title="Mostrar/ocultar o gráfico de riscos">
+          {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
         </button>
       )}
-      <button className="vr-actbar-next" onClick={onNext} title="Avançar a apresentação">
-        {I.playTri}
-      </button>
+      {act && (
+        <button
+          className={act.danger ? "vr-actbar-present is-on" : "vr-actbar-present"}
+          onClick={onAction}
+          disabled={act.done || busy}
+          title={act.label}
+        >
+          {busy ? "…" : act.label}
+        </button>
+      )}
+      {stage !== "done" && (
+        <button className="vr-actbar-next" onClick={onAdvance} title="Avançar para a próxima etapa">
+          {I.playTri}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const RISK_COLORS = ["#13c2c2", "#1890ff", "#2f54eb", "#722ed1", "#a0d911", "#52c41a", "#f4664a", "#faad14"];
+
+/** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
+ *  cada 5s (mesmo dado do gráfico do chat do pacote). */
+function RiskChart({ roomId }: { roomId: string }) {
+  const sdk = useSDK();
+  const [chart, setChart] = useState<any | null>(null);
+  const [status, setStatus] = useState<"loading" | "ok" | "wait" | "nodim">("loading");
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      sdk.openpbl.riskChart(roomId).then((r) => {
+        if (!alive) return;
+        if (r.available && r.chart) { setChart(r.chart); setStatus("ok"); }
+        else if (r.reason === "no_dimensions_id") setStatus("nodim");
+        else setStatus((s) => (s === "ok" ? "ok" : "wait"));   // mantém o último gráfico bom
+      }).catch(() => { if (alive) setStatus((s) => (s === "ok" ? "ok" : "wait")); });
+    load();
+    const iv = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [roomId]);
+
+  if (status === "nodim")
+    return <div className="vr-chart-msg">Selecione o <b>conjunto de dimensões</b> na criação da sala para exibir o gráfico de riscos.</div>;
+  if (!chart)
+    return <div className="vr-chart-msg">{status === "loading" ? "Carregando gráfico…" : "Aguardando as respostas dos alunos…"}</div>;
+
+  const dims: string[] = chart.dimensions || [];
+  const series: { name: string; color: string; values: number[] }[] = [];
+  if (Array.isArray(chart.baseGrades)) series.push({ name: "Base do Curador", color: RISK_COLORS[0], values: chart.baseGrades });
+  if (Array.isArray(chart.groupAverageGrades)) series.push({ name: "Média dos Grupos", color: RISK_COLORS[1], values: chart.groupAverageGrades });
+  (chart.groups || []).forEach((g: any, i: number) => {
+    series.push({ name: `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
+  });
+
+  return (
+    <div className="vr-chart-wrap">
+      <div className="vr-chart-title">Questionário de Riscos</div>
+      <RadarSvg dims={dims} series={series} max={12} />
+    </div>
+  );
+}
+
+function RadarSvg({ dims, series, max }: { dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number }) {
+  const N = dims.length;
+  if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
+  const size = 340, cx = size / 2, cy = size / 2, R = size / 2 - 62;
+  const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
+  const point = (i: number, v: number): [number, number] => {
+    const r = (Math.max(0, Math.min(max, v)) / max) * R;
+    return [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
+  };
+  const poly = (vals: number[]) => dims.map((_, i) => point(i, vals[i] ?? 0).join(",")).join(" ");
+  const rings = [0.25, 0.5, 0.75, 1];
+  return (
+    <div className="vr-radar">
+      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg">
+        {rings.map((f, ri) => (
+          <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, max * f).join(",")).join(" ")} />
+        ))}
+        {dims.map((d, i) => {
+          const [ax, ay] = point(i, max);
+          const lx = cx + (R + 18) * Math.cos(angle(i));
+          const ly = cy + (R + 18) * Math.sin(angle(i));
+          const anchor = Math.abs(lx - cx) < 10 ? "middle" : lx > cx ? "start" : "end";
+          return (
+            <g key={i}>
+              <line className="vr-radar-axis" x1={cx} y1={cy} x2={ax} y2={ay} />
+              <text className="vr-radar-label" x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle">
+                {d.length > 18 ? d.slice(0, 17) + "…" : d}
+              </text>
+            </g>
+          );
+        })}
+        {series.map((s, si) => (
+          <polygon key={si} className="vr-radar-series" points={poly(s.values)} style={{ stroke: s.color, fill: s.color }} />
+        ))}
+      </svg>
+      <div className="vr-radar-legend">
+        {series.map((s, si) => (
+          <span key={si} className="vr-radar-leg"><i style={{ background: s.color }} />{s.name}</span>
+        ))}
+      </div>
     </div>
   );
 }

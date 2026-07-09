@@ -81,6 +81,7 @@ def _row_to_state(row) -> dict:
         "released_dimensions": row["released_dimensions"],
         "released": row["released"],
         "code_hidden": row["code_hidden"],
+        "stage": row["stage"] if "stage" in row else "presentation",
     }
 
 
@@ -349,6 +350,31 @@ async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)
     if not isinstance(payload, dict) or not payload.get("dimensions"):
         return {"available": False, "reason": "empty"}
     return {"available": True, "chart": payload}
+
+
+_STAGES = ("presentation", "close", "risks", "perceptions", "done")
+
+
+class StageSet(BaseModel):
+    stage: str
+
+
+@router.post("/{room_id}/openpbl/stage")
+async def set_stage(room_id: str, body: StageSet, user: CurrentUser = Depends(get_current_user)):
+    """Cursor da etapa do facilitador (botão verde ▶). Persiste + sincroniza."""
+    await _require_host(user)
+    stage = (body.stage or "").strip()
+    if stage not in _STAGES:
+        raise HTTPException(400, f"stage inválido: {stage}")
+    row = await _get_class(room_id)
+    if not row:
+        raise HTTPException(404, "aula OpenPBL não iniciada nesta sala")
+    await pool().execute(
+        "UPDATE video_room_openpbl_class SET stage=$2 WHERE room_id=$1", room_id, stage)
+    row = await _get_class(room_id)
+    state = _row_to_state(row)
+    await hub.broadcast(room_id, "openpbl-class", state)
+    return state
 
 
 # ── roster: status dos alunos p/ as bordas dos tiles ──────────────────────
