@@ -21,6 +21,7 @@ class RoomCreate(BaseModel):
     require_email: bool = False
     scheduled_at: Optional[datetime] = None
     external_ref: Optional[str] = None
+    openpbl_activity_id: Optional[str] = None   # aula OpenPBL: auto-gera o class-code ao entrar
 
 
 class RoomOut(BaseModel):
@@ -48,6 +49,7 @@ class RoomOut(BaseModel):
     recording_url: Optional[str]
     external_ref: Optional[str]
     require_email: bool = False
+    openpbl_activity_id: Optional[str] = None
     scheduled_at: Optional[datetime]
     ended_at: Optional[datetime]
     created_at: datetime

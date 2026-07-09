@@ -13,11 +13,14 @@ O chat do facilitador é um proxy do chat.openpbl.ai (painel do professor, HTTP
 Basic). O aluno continua mandando pelo chat do pacote; o facilitador responde
 daqui de dentro da sala.
 """
+import asyncio
 import json
+import time
 import httpx
+from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from ..auth import get_current_user, CurrentUser
+from ..auth import get_current_user, optional_user, CurrentUser
 from ..config import settings
 from ..db import pool
 from ..realtime.hub import hub
@@ -222,6 +225,93 @@ async def list_groups(room_id: str, user: CurrentUser = Depends(get_current_user
         if r.status_code != 200:
             raise HTTPException(502, f"OpenPBL listarGrupos falhou ({r.status_code})")
         return r.json()
+
+
+# ── roster: status dos alunos p/ as bordas dos tiles ──────────────────────
+# Verde = dentro do pacote; vermelho = fora; badge = registrou presença na
+# sessão (Presentation/Students). Todo cliente da sala faz polling, então o
+# resultado é cacheado por sala (1 varredura LRS/attendance a cada ~8s).
+_roster_cache: dict[str, tuple[float, dict]] = {}
+_ROSTER_TTL = 8.0
+
+
+@router.get("/{room_id}/openpbl/roster")
+async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional_user)):
+    now = time.monotonic()
+    hit = _roster_cache.get(room_id)
+    if hit and (now - hit[0]) < _ROSTER_TTL:
+        return hit[1]
+
+    room = await pool().fetchrow(
+        "SELECT created_at, owner_id FROM video_rooms WHERE id=$1", room_id)
+    if not room:
+        raise HTTPException(404, "room not found")
+    cls = await _get_class(room_id)
+    parts = await pool().fetch(
+        "SELECT user_id, display_name, email, is_staff FROM video_room_participants "
+        "WHERE room_id=$1 AND left_at IS NULL", room_id)
+
+    since_iso = room["created_at"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    lrs = settings.scorm_lrs_url.rstrip("/")
+
+    # Presença registrada na sessão (lista do Presentation/Students).
+    registered_emails: set[str] = set()
+    if cls and settings.openpbl_integration_apikey:
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(
+                    f"{settings.openpbl_integration_url.rstrip('/')}/api/Presentation/Students/{cls['presentation_code']}",
+                    headers={"Accept": "application/json", "apikey": settings.openpbl_integration_apikey})
+                if r.status_code == 200:
+                    for s in ((r.json() or {}).get("data") or []):
+                        if s.get("email"):
+                            registered_emails.add(s["email"].strip().lower())
+        except Exception:
+            pass
+
+    async def in_package(email: str) -> bool:
+        """Último evento do aluno na sessão indica pacote aberto (verde) ou não."""
+        try:
+            async with httpx.AsyncClient(timeout=8) as c:
+                r = await c.get(f"{lrs}/interaction-events",
+                                params={"studentEmail": email, "limit": 60})
+            evs = (r.json() or {}).get("data") or []
+        except Exception:
+            return False
+        sess = sorted([e for e in evs if (e.get("createdAt") or "") >= since_iso],
+                      key=lambda x: x.get("createdAt") or "", reverse=True)
+        if not sess:
+            return False
+        if sess[0].get("eventType") == "package_exited":
+            return False
+        return any(e.get("eventType") in ("package_opened", "activity_accessed",
+                                          "authenticated", "quiz_answered", "lesson_score",
+                                          "package_completed") for e in sess)
+
+    emails = {(p["email"] or "").strip().lower(): None for p in parts
+              if p["email"] and not p["is_staff"] and p["user_id"] != room["owner_id"]}
+    flags = await asyncio.gather(*[in_package(e) for e in emails]) if emails else []
+    in_pkg = dict(zip(emails.keys(), flags))
+
+    students = []
+    for p in parts:
+        email = (p["email"] or "").strip().lower()
+        is_staff = bool(p["is_staff"]) or p["user_id"] == room["owner_id"]
+        students.append({
+            "identity": p["user_id"],
+            "name": p["display_name"] or p["user_id"],
+            "is_staff": is_staff,
+            "in_package": (in_pkg.get(email, False) if not is_staff else None),
+            "registered": (email in registered_emails) if (email and not is_staff) else False,
+        })
+
+    out = {
+        "code": cls["presentation_code"] if cls else None,
+        "checking_open": cls["checking_open"] if cls else None,
+        "students": students,
+    }
+    _roster_cache[room_id] = (now, out)
+    return out
 
 
 # ── chat do facilitador (proxy do painel do professor) ────────────────────

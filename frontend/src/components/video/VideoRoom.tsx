@@ -517,7 +517,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
 
       <div className="vr-stage">
         <div className="vr-grid-wrap">
-          <VideoGrid />
+          {scorm
+            ? <OpenPblGrid roomId={roomId} localIsStaff={isStaff} localIdentity={identity} />
+            : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
               <Suspense fallback={<div className="vr-center">Carregando quadro…</div>}>
@@ -639,6 +641,86 @@ function VideoGrid() {
   );
 }
 
+/** Layout OpenPBL: facilitador destacado à esquerda (com o class-code),
+ *  alunos à direita com borda de status — 🟢 dentro do pacote, 🔴 fora —
+ *  e badge ✓ para quem já registrou presença com o class-code. */
+function OpenPblGrid({ roomId, localIsStaff, localIdentity }: { roomId: string; localIsStaff: boolean; localIdentity?: string }) {
+  const sdk = useSDK();
+  const [roster, setRoster] = useState<any | null>(null);
+
+  useEffect(() => {
+    const load = () => sdk.openpbl.roster(roomId).then(setRoster).catch(() => {});
+    load();
+    const iv = setInterval(load, 10000);
+    const off = sdk.subscribe(roomId, (event) => { if (event === "openpbl-class") load(); });
+    return () => { clearInterval(iv); off(); };
+  }, [roomId]);
+
+  const tracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
+    { onlySubscribed: false },
+  );
+
+  // Compartilhamento de tela continua em spotlight (sobrepõe o layout OpenPBL).
+  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
+  if (screen) {
+    const sharerCam = tracks.find(
+      (t) => t.source === Track.Source.Camera && t.participant.identity === screen.participant.identity,
+    );
+    return (
+      <div className="vr-spotlight">
+        <ParticipantTile trackRef={screen} className="vr-spotlight-main" />
+        {sharerCam && (
+          <div className="vr-spotlight-pip">
+            <ParticipantTile trackRef={sharerCam} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const byId: Record<string, any> = {};
+  (roster?.students || []).forEach((s: any) => { byId[s.identity] = s; });
+  const isHostTile = (identity: string) =>
+    byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
+
+  const cams = tracks.filter((t) => t.source === Track.Source.Camera);
+  const hostTiles = cams.filter((t) => isHostTile(t.participant.identity));
+  const studentTiles = cams.filter((t) => !isHostTile(t.participant.identity));
+
+  return (
+    <div className="vr-pbl-stage">
+      <div className="vr-pbl-left">
+        {hostTiles.map((t) => (
+          <div key={`${t.participant.identity}-host`} className="vr-pbl-host-tile">
+            <ParticipantTile trackRef={t} />
+          </div>
+        ))}
+        {roster?.code && (
+          <div className="vr-pbl-code-card">
+            <span className="vr-pbl-code-label">Class code</span>
+            <span className="vr-pbl-code">{roster.code}</span>
+            {roster.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
+          </div>
+        )}
+      </div>
+      <div className="vr-pbl-students">
+        {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
+        {studentTiles.map((t) => {
+          const st = byId[t.participant.identity];
+          return (
+            <div key={`${t.participant.identity}-st`} className="vr-pbl-tile"
+              data-pkg={st?.in_package ? "in" : "out"}>
+              <ParticipantTile trackRef={t} />
+              {st?.registered && <span className="vr-pbl-reg" title="Registrado na sessão (class-code inserido)">✓</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PeoplePanel({ roomId, isStaff, inviteUrl }: { roomId: string; isStaff: boolean; inviteUrl: string | null }) {
   const sdk = useSDK();
   const participants = useParticipants();
@@ -756,6 +838,24 @@ function ClassControl({ roomId }: { roomId: string }) {
       if (event === "openpbl-class") setCls(payload);
     });
   }, [roomId]);
+
+  // Sala vinculada a uma atividade OpenPBL → gera o class-code automaticamente
+  // ao entrar (replica o pacote PRESENTATION, que gerava ao abrir).
+  const autoRef = useRef(false);
+  useEffect(() => {
+    if (!cls || cls.active || autoRef.current) return;
+    sdk.rooms.get(roomId).then((r: any) => {
+      if (r.openpbl_activity_id && !autoRef.current) {
+        autoRef.current = true;
+        setActivityId(r.openpbl_activity_id);
+        setBusy("start");
+        sdk.openpbl.startClass(roomId, r.openpbl_activity_id)
+          .then(setCls)
+          .catch((e: any) => setErr(e?.message?.slice(0, 180) || "Falha ao iniciar a aula"))
+          .finally(() => setBusy(null));
+      }
+    }).catch(() => {});
+  }, [cls, roomId]);
 
   const run = async (key: string, fn: () => Promise<any>) => {
     setBusy(key); setErr(null);

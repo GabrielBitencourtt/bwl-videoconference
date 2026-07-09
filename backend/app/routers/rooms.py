@@ -50,15 +50,15 @@ async def create_room(
           (tenant_id, room_id, title, description, owner_id, max_participants, is_public, auto_record,
            lobby_enabled, lobby_timer_title, lobby_timer_seconds, lobby_bg_video, lobby_auto_admit,
            guest_token, allow_camera, allow_mic, allow_screen_share, allow_whiteboard_edit,
-           scheduled_at, external_ref, require_email)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           scheduled_at, external_ref, require_email, openpbl_activity_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
         RETURNING *
         """,
         tenant_id, room_id, body.title, body.description, user.id, max_participants, body.is_public,
         auto_record, body.lobby_enabled, body.lobby_timer_title, body.lobby_timer_seconds,
         body.lobby_bg_video, body.lobby_auto_admit, guest_token,
         body.allow_camera, body.allow_mic, body.allow_screen_share, body.allow_whiteboard_edit,
-        body.scheduled_at, body.external_ref, body.require_email,
+        body.scheduled_at, body.external_ref, body.require_email, body.openpbl_activity_id,
     )
     return _row_to_room(row)
 

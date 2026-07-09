@@ -45,6 +45,7 @@ export interface Room {
   recording_enabled: boolean;
   recording_url?: string | null;
   external_ref?: string | null;
+  openpbl_activity_id?: string | null;
   scheduled_at?: string | null;
   ended_at?: string | null;
   created_at: string;
@@ -67,6 +68,14 @@ export interface TokenResponse {
   token: string;
   livekit_url: string;
   identity: string;
+}
+
+export interface OpenPblRosterEntry {
+  identity: string;
+  name: string;
+  is_staff: boolean;
+  in_package: boolean | null;   // null p/ staff (não se aplica)
+  registered: boolean;
 }
 
 export interface OpenPblClass {
@@ -222,6 +231,11 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       closeRegistration: (roomId: string) =>
         call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/close-registration`, { method: "POST" }),
       groups: (roomId: string) => call<any[]>(`/api/rooms/${roomId}/openpbl/groups`),
+      /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
+       *  + badge de registrado. Público — todo cliente da sala faz polling. */
+      roster: (roomId: string) =>
+        call<{ code: string | null; checking_open: boolean | null; students: OpenPblRosterEntry[] }>(
+          `/api/rooms/${roomId}/openpbl/roster`),
       chat: {
         conversations: (roomId: string) =>
           call<any[]>(`/api/rooms/${roomId}/openpbl/chat/conversations`),
