@@ -571,7 +571,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                     <div className="vr-pbl-present-big">
                       <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
                     </div>
-                    <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} strip />
+                    <div className="vr-pbl-students-col">
+                      <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
+                    </div>
                   </div>
                 : <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />)
             : <VideoGrid />}

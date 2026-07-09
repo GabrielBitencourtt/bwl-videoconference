@@ -664,17 +664,17 @@
 .vr-actbar-next:hover { background: #16a34a; }
 .vr-actbar-next svg { width: 20px; height: 20px; }
 
-/* Área principal OpenPBL: apresentação GRANDE em cima + faixa de alunos embaixo */
-.vr-pbl-main { display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 0; }
+/* Área principal OpenPBL: apresentação à ESQUERDA + webcams dos alunos à DIREITA */
+.vr-pbl-main { display: flex; flex-direction: row; gap: 10px; width: 100%; height: 100%; min-height: 0; }
 .vr-pbl-present-big {
-  flex: 1; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
+  flex: 1; min-width: 0; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
   background: #fff; box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
 }
 .vr-present-iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
-/* Faixa de alunos (monitor) abaixo da apresentação */
-.vr-pbl-students--strip {
-  flex: 0 0 auto; height: 128px; display: flex; grid-template-columns: none;
-  overflow-x: auto; overflow-y: hidden; gap: 8px;
+/* Coluna dos alunos (metade direita) */
+.vr-pbl-students-col { flex: 1; min-width: 0; min-height: 0; }
+.vr-pbl-students-col .vr-pbl-students { height: 100%; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+@media (max-width: 1000px) {
+  .vr-pbl-main { flex-direction: column; }
+  .vr-pbl-students-col { flex: 0 0 40%; }
 }
-.vr-pbl-students--strip .vr-pbl-tile { flex: 0 0 auto; width: 200px; aspect-ratio: 16 / 10; }
-.vr-pbl-students--strip .vr-pbl-empty { display: grid; place-items: center; width: 100%; }
