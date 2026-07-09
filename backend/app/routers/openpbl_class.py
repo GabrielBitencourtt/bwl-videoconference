@@ -15,6 +15,7 @@ daqui de dentro da sala.
 """
 import asyncio
 import json
+import math
 import time
 import httpx
 from datetime import timezone
@@ -321,9 +322,13 @@ async def _auto_group_breakouts(room_id: str) -> int:
     if n == 1:
         g = 1
     else:
-        g = min(6, (n + 4) // 5)           # ceil(n/5), no máx 6 grupos
-        while g > 1 and n < 2 * g:         # garante ninguém sozinho (mín 2 por grupo)
-            g -= 1
+        # ~raiz(n) grupos: equilibra o nº de grupos com o tamanho de cada um
+        # (4→2×2, 5→3+2, 6→2×3, 12→3×4, …). Para n≥4 isso já garante ninguém
+        # sozinho (menor grupo = floor(n/g) ≥ 2).
+        g = max(1, math.isqrt(n))
+        while (n + g - 1) // g > 5 and g < 6:   # respeita o máximo de 5 por grupo
+            g += 1
+        g = min(g, 6)                            # e o máximo de 6 grupos
 
     room = await pool().fetchrow("SELECT * FROM video_rooms WHERE id=$1", room_id)
     if not room:
