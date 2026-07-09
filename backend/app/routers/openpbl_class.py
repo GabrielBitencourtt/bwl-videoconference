@@ -269,19 +269,19 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
         except Exception:
             pass
 
-    async def in_package(email: str) -> bool:
-        """Último evento do aluno na sessão indica pacote aberto (verde) ou não."""
+    async def in_package(email: str) -> bool | None:
+        """True/False pelo LRS; None = sem eventos na sessão (LRS pode atrasar)."""
         try:
             async with httpx.AsyncClient(timeout=8) as c:
                 r = await c.get(f"{lrs}/interaction-events",
                                 params={"studentEmail": email, "limit": 60})
             evs = (r.json() or {}).get("data") or []
         except Exception:
-            return False
+            return None
         sess = sorted([e for e in evs if (e.get("createdAt") or "") >= since_iso],
                       key=lambda x: x.get("createdAt") or "", reverse=True)
         if not sess:
-            return False
+            return None
         if sess[0].get("eventType") == "package_exited":
             return False
         return any(e.get("eventType") in ("package_opened", "activity_accessed",
@@ -291,7 +291,11 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
     emails = {(p["email"] or "").strip().lower(): None for p in parts
               if p["email"] and not p["is_staff"] and p["user_id"] != room["owner_id"]}
     flags = await asyncio.gather(*[in_package(e) for e in emails]) if emails else []
-    in_pkg = dict(zip(emails.keys(), flags))
+    # Registrar presença SÓ é possível de dentro do pacote — então, sem eventos
+    # no LRS (None), o registro vale como evidência de pacote aberto. O LRS só
+    # rebaixa para vermelho quando mostrar package_exited (saiu depois).
+    in_pkg = {e: (f if f is not None else (e in registered_emails))
+              for e, f in zip(emails.keys(), flags)}
 
     students = []
     for p in parts:

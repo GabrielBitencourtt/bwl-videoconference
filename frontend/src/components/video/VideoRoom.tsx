@@ -422,6 +422,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [settingsOpen, setSettingsOpen] = useState(false);   // Configurações = modal central
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
+  const [pblRoster, setPblRoster] = useState<any | null>(null);   // status dos alunos (OpenPBL)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -464,6 +465,32 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         setBoardEdit(payload.allow_whiteboard_edit);
     });
   }, [roomId, identity]);
+
+  // OpenPBL: roster (bordas de status dos alunos + código) — só em salas scorm.
+  useEffect(() => {
+    if (!scorm) return;
+    const load = () => sdk.openpbl.roster(roomId).then(setPblRoster).catch(() => {});
+    load();
+    const iv = setInterval(load, 10000);
+    const off = sdk.subscribe(roomId, (event) => { if (event === "openpbl-class") load(); });
+    return () => { clearInterval(iv); off(); };
+  }, [scorm, roomId]);
+
+  // Auto-gera o class-code ao ENTRAR (host + sala vinculada a uma atividade OpenPBL),
+  // como o pacote PRESENTATION fazia ao abrir — não depende de abrir a aba OpenPBL.
+  const autoClassRef = useRef(false);
+  useEffect(() => {
+    if (!scorm || !isStaff || autoClassRef.current) return;
+    autoClassRef.current = true;
+    (async () => {
+      try {
+        const st = await sdk.openpbl.classState(roomId);
+        if (st.active) return;
+        const r: any = await sdk.rooms.get(roomId);
+        if (r.openpbl_activity_id) await sdk.openpbl.startClass(roomId, r.openpbl_activity_id);
+      } catch { /* silencioso */ }
+    })();
+  }, [scorm, isStaff, roomId]);
 
   const toggleRecording = () => {
     if (recording) {
@@ -515,10 +542,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
         )}
 
-      <div className="vr-stage">
+      <div className="vr-stage" data-pbl={scorm ? "1" : undefined}>
         <div className="vr-grid-wrap">
           {scorm
-            ? <OpenPblGrid roomId={roomId} localIsStaff={isStaff} localIdentity={identity} />
+            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
             : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
@@ -550,6 +577,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         ) : (panel === "chat" || panel === "people") && (
           <aside className="vr-panel">
+            {scorm && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
             <div className="vr-tabs">
               <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
               <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -641,27 +669,16 @@ function VideoGrid() {
   );
 }
 
-/** Layout OpenPBL: facilitador destacado à esquerda (com o class-code),
- *  alunos à direita com borda de status — 🟢 dentro do pacote, 🔴 fora —
- *  e badge ✓ para quem já registrou presença com o class-code. */
-function OpenPblGrid({ roomId, localIsStaff, localIdentity }: { roomId: string; localIsStaff: boolean; localIdentity?: string }) {
-  const sdk = useSDK();
-  const [roster, setRoster] = useState<any | null>(null);
-
-  useEffect(() => {
-    const load = () => sdk.openpbl.roster(roomId).then(setRoster).catch(() => {});
-    load();
-    const iv = setInterval(load, 10000);
-    const off = sdk.subscribe(roomId, (event) => { if (event === "openpbl-class") load(); });
-    return () => { clearInterval(iv); off(); };
-  }, [roomId]);
-
+/** Grade dos ALUNOS (área principal, à direita) com borda de status:
+ *  🟢 dentro do pacote · 🔴 fora · badge ✓ = registrou presença com o class-code.
+ *  O facilitador e o código ficam no header do painel (PblPanelHeader). */
+function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity }: { roster: any | null; localIsStaff: boolean; localIdentity?: string }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],
     { onlySubscribed: false },
   );
 
-  // Compartilhamento de tela continua em spotlight (sobrepõe o layout OpenPBL).
+  // Compartilhamento de tela em spotlight, sobrepondo o layout.
   const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
   if (screen) {
     const sharerCam = tracks.find(
@@ -670,11 +687,7 @@ function OpenPblGrid({ roomId, localIsStaff, localIdentity }: { roomId: string; 
     return (
       <div className="vr-spotlight">
         <ParticipantTile trackRef={screen} className="vr-spotlight-main" />
-        {sharerCam && (
-          <div className="vr-spotlight-pip">
-            <ParticipantTile trackRef={sharerCam} />
-          </div>
-        )}
+        {sharerCam && <div className="vr-spotlight-pip"><ParticipantTile trackRef={sharerCam} /></div>}
       </div>
     );
   }
@@ -684,39 +697,68 @@ function OpenPblGrid({ roomId, localIsStaff, localIdentity }: { roomId: string; 
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
 
-  const cams = tracks.filter((t) => t.source === Track.Source.Camera);
-  const hostTiles = cams.filter((t) => isHostTile(t.participant.identity));
-  const studentTiles = cams.filter((t) => !isHostTile(t.participant.identity));
+  const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity));
 
   return (
-    <div className="vr-pbl-stage">
-      <div className="vr-pbl-left">
-        {hostTiles.map((t) => (
-          <div key={`${t.participant.identity}-host`} className="vr-pbl-host-tile">
+    <div className="vr-pbl-students">
+      {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
+      {studentTiles.map((t) => {
+        const st = byId[t.participant.identity];
+        return (
+          <div key={`${t.participant.identity}-st`} className="vr-pbl-tile" data-pkg={st?.in_package ? "in" : "out"}>
             <ParticipantTile trackRef={t} />
+            {st?.registered && <span className="vr-pbl-reg" title="Registrado na sessão (class-code inserido)">✓</span>}
           </div>
-        ))}
-        {roster?.code && (
-          <div className="vr-pbl-code-card">
+        );
+      })}
+    </div>
+  );
+}
+
+/** Header do painel (OpenPBL): câmera do facilitador destacada + card do class-code. */
+function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; roomId: string }) {
+  const sdk = useSDK();
+  const [expand, setExpand] = useState(false);
+  const [sent, setSent] = useState(false);
+  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
+
+  const byId: Record<string, any> = {};
+  (roster?.students || []).forEach((s: any) => { byId[s.identity] = s; });
+  const isHostTile = (identity: string) =>
+    byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
+  const hostTrack = tracks.find((t) => isHostTile(t.participant.identity));
+  const code: string | null = roster?.code ?? null;
+
+  const sendCode = () => {
+    if (!code) return;
+    sdk.chat.send(roomId, `📋 Código da sessão: ${code} — digite no seu pacote OpenPBL para registrar presença.`).catch(() => {});
+    setSent(true); setTimeout(() => setSent(false), 2500);
+  };
+
+  if (!hostTrack && !code) return null;
+  return (
+    <div className="vr-pbl-head">
+      {hostTrack && <div className="vr-pbl-head-cam"><ParticipantTile trackRef={hostTrack} /></div>}
+      {code && (
+        <div className="vr-pbl-code-card">
+          <div className="vr-pbl-code-top">
             <span className="vr-pbl-code-label">Class code</span>
-            <span className="vr-pbl-code">{roster.code}</span>
-            {roster.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
+            <button className="vr-pbl-code-exp" onClick={() => setExpand(true)} title="Ampliar">⛶</button>
           </div>
-        )}
-      </div>
-      <div className="vr-pbl-students">
-        {studentTiles.length === 0 && <div className="vr-pbl-empty">Aguardando alunos…</div>}
-        {studentTiles.map((t) => {
-          const st = byId[t.participant.identity];
-          return (
-            <div key={`${t.participant.identity}-st`} className="vr-pbl-tile"
-              data-pkg={st?.in_package ? "in" : "out"}>
-              <ParticipantTile trackRef={t} />
-              {st?.registered && <span className="vr-pbl-reg" title="Registrado na sessão (class-code inserido)">✓</span>}
-            </div>
-          );
-        })}
-      </div>
+          <span className="vr-pbl-code">{code}</span>
+          {roster?.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
+          <button className="vr-pbl-code-send" onClick={sendCode}>{sent ? "Enviado ✓" : "Enviar no chat"}</button>
+        </div>
+      )}
+      {expand && code && (
+        <div className="vr-sheet-backdrop" onClick={() => setExpand(false)}>
+          <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>
+            <button className="vr-sheet-close vr-pbl-big-x" onClick={() => setExpand(false)} aria-label="Fechar">✕</button>
+            <span className="vr-pbl-code-label">Class code</span>
+            <span className="vr-pbl-code-huge">{code}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -838,24 +880,6 @@ function ClassControl({ roomId }: { roomId: string }) {
       if (event === "openpbl-class") setCls(payload);
     });
   }, [roomId]);
-
-  // Sala vinculada a uma atividade OpenPBL → gera o class-code automaticamente
-  // ao entrar (replica o pacote PRESENTATION, que gerava ao abrir).
-  const autoRef = useRef(false);
-  useEffect(() => {
-    if (!cls || cls.active || autoRef.current) return;
-    sdk.rooms.get(roomId).then((r: any) => {
-      if (r.openpbl_activity_id && !autoRef.current) {
-        autoRef.current = true;
-        setActivityId(r.openpbl_activity_id);
-        setBusy("start");
-        sdk.openpbl.startClass(roomId, r.openpbl_activity_id)
-          .then(setCls)
-          .catch((e: any) => setErr(e?.message?.slice(0, 180) || "Falha ao iniciar a aula"))
-          .finally(() => setBusy(null));
-      }
-    }).catch(() => {});
-  }, [cls, roomId]);
 
   const run = async (key: string, fn: () => Promise<any>) => {
     setBusy(key); setErr(null);
@@ -1008,28 +1032,6 @@ function FacilitatorChat({ roomId }: { roomId: string }) {
   );
 }
 
-function ScormRelay({ roomId }: { roomId: string }) {
-  const sdk = useSDK();
-  const [code, setCode] = useState("");
-  const [sent, setSent] = useState(false);
-  const send = () => {
-    const c = code.trim();
-    if (!c) return;
-    sdk.chat.send(roomId, `📋 Class-code da turma: ${c} — copie e cole no seu pacote OpenPBL para entrar.`).catch(() => {});
-    setSent(true); setTimeout(() => setSent(false), 2500);
-  };
-  return (
-    <div className="vr-scorm-relay">
-      <label>Class-code do pacote</label>
-      <div className="vr-scorm-relay-row">
-        <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Cole o código gerado no pacote"
-          onKeyDown={(e) => { if (e.key === "Enter") send(); }} />
-        <button onClick={send}>{sent ? "Enviado ✓" : "Enviar no chat"}</button>
-      </div>
-      <p className="vr-scorm-hint">Os alunos recebem o código no chat para colar no pacote deles.</p>
-    </div>
-  );
-}
 
 function LessonDots({ s, order }: { s: any; order: string[] }) {
   if (!order.length) return null;
@@ -1087,7 +1089,6 @@ function ScormPanel({ roomId }: { roomId: string }) {
     <div className="vr-scorm">
       <ClassControl roomId={roomId} />
       <FacilitatorChat roomId={roomId} />
-      <ScormRelay roomId={roomId} />
       <div className="vr-scorm-progress">
         <div className="vr-scorm-head">
           <span>Progresso dos alunos</span>
@@ -1111,7 +1112,6 @@ function ScormPanel({ roomId }: { roomId: string }) {
               </div>
             </div>
             <div className="vr-scorm-modal-body">
-              <ScormRelay roomId={roomId} />
               {warn}{legend}
               <StudentList students={students} loading={loading} order={order} />
             </div>

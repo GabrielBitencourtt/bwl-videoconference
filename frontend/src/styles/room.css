@@ -577,25 +577,47 @@
 }
 .vr-fchat-msg[data-teacher="true"] { align-self: flex-end; background: var(--brand-accent); border: none; color: #fff; }
 
-/* ===================== Layout OpenPBL (facilitador + alunos) ===================== */
-.vr-pbl-stage { display: flex; gap: 12px; width: 100%; height: 100%; min-height: 0; }
-.vr-pbl-left { flex: 0 0 300px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.vr-pbl-host-tile {
-  aspect-ratio: 16 / 10; border-radius: var(--vr-radius); overflow: hidden;
-  background: var(--vr-surface); box-shadow: var(--vr-shadow);
-  border: 2px solid var(--brand-accent);
+/* ===================== Layout OpenPBL ===================== */
+/* Painel (facilitador + class-code + chat) à ESQUERDA; alunos preenchem a
+   grade à direita. row-reverse: o painel (2º filho) vai pra esquerda. */
+.vr-stage[data-pbl="1"] { flex-direction: row-reverse; }
+
+/* Header do painel: câmera do facilitador destacada + card do class-code */
+.vr-pbl-head { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); }
+.vr-pbl-head-cam {
+  flex: 1; min-width: 0; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden;
+  background: #000; border: 2px solid var(--brand-accent);
 }
-.vr-pbl-host-tile .lk-participant-tile { width: 100%; height: 100%; }
+.vr-pbl-head-cam .lk-participant-tile { width: 100%; height: 100%; }
 .vr-pbl-code-card {
-  background: #fff; color: #111; border-radius: 12px; padding: 14px 16px;
+  flex: 1; min-width: 0; background: #fff; color: #111; border-radius: 12px; padding: 10px 12px;
   display: flex; flex-direction: column; gap: 4px; box-shadow: var(--vr-shadow);
 }
+.vr-pbl-code-top { display: flex; align-items: center; justify-content: space-between; }
 .vr-pbl-code-label { font-size: 12px; color: #666; font-weight: 600; }
-.vr-pbl-code { font-size: 26px; font-weight: 800; letter-spacing: 2px; font-family: ui-monospace, monospace; }
+.vr-pbl-code-exp { background: none; border: none; color: #666; cursor: pointer; font-size: 13px; padding: 0 2px; }
+.vr-pbl-code-exp:hover { color: #111; }
+.vr-pbl-code { font-size: 24px; font-weight: 800; letter-spacing: 2px; font-family: ui-monospace, monospace; }
 .vr-pbl-code-closed { font-size: 11px; color: var(--vr-danger); font-weight: 700; }
+.vr-pbl-code-send {
+  margin-top: 2px; background: var(--brand-accent); color: #fff; border: none; border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.vr-pbl-code-send:hover { background: var(--brand-accent-hover); }
+
+/* Class-code ampliado (popup) */
+.vr-pbl-code-big {
+  position: relative; background: #fff; color: #111; border-radius: 18px;
+  padding: 40px 56px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  box-shadow: var(--vr-shadow);
+}
+.vr-pbl-code-huge { font-size: 72px; font-weight: 800; letter-spacing: 6px; font-family: ui-monospace, monospace; }
+.vr-pbl-big-x { position: absolute; top: 12px; right: 14px; color: #666; }
+
+/* Grade dos alunos (área principal) */
 .vr-pbl-students {
-  flex: 1; min-width: 0; overflow-y: auto; align-content: flex-start;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px;
+  width: 100%; height: 100%; overflow-y: auto; align-content: flex-start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;
 }
 .vr-pbl-tile {
   position: relative; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden;
@@ -611,10 +633,8 @@
 }
 .vr-pbl-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--vr-text-dim); font-size: 13px; padding: 40px 0; }
 @media (max-width: 768px) {
-  .vr-pbl-stage { flex-direction: column; }
-  .vr-pbl-left { flex: none; flex-direction: row; align-items: stretch; }
-  .vr-pbl-host-tile { flex: 1; max-width: 55%; }
-  .vr-pbl-code-card { flex: 1; justify-content: center; }
-  .vr-pbl-code { font-size: 20px; }
+  .vr-stage[data-pbl="1"] { flex-direction: column; }
   .vr-pbl-students { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .vr-pbl-code-huge { font-size: 48px; }
+  .vr-pbl-code-big { padding: 28px 32px; }
 }
