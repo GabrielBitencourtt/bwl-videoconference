@@ -947,24 +947,28 @@ function RiskChart({ roomId }: { roomId: string }) {
 
   const dims: string[] = chart.dimensions || [];
   const series: { name: string; color: string; values: number[] }[] = [];
-  if (Array.isArray(chart.baseGrades)) series.push({ name: "Base do Curador", color: RISK_COLORS[0], values: chart.baseGrades });
-  if (Array.isArray(chart.groupAverageGrades)) series.push({ name: "Média dos Grupos", color: RISK_COLORS[1], values: chart.groupAverageGrades });
+  if (Array.isArray(chart.baseGrades) && chart.baseGrades.length) series.push({ name: "Base do Curador", color: RISK_COLORS[0], values: chart.baseGrades });
+  if (Array.isArray(chart.classAverage) && chart.classAverage.length) series.push({ name: "Média da Turma", color: RISK_COLORS[1], values: chart.classAverage });
   (chart.groups || []).forEach((g: any, i: number) => {
-    series.push({ name: `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
+    series.push({ name: g.name || `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
   });
 
   return (
     <div className="vr-chart-wrap">
-      <div className="vr-chart-title">Questionário de Riscos</div>
-      <RadarSvg dims={dims} series={series} max={12} />
+      <div className="vr-chart-title">Questionário de Riscos <span className="vr-chart-sub">· {chart.total || 0} aluno(s)</span></div>
+      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={chart.total || 0} />
     </div>
   );
 }
 
-function RadarSvg({ dims, series, max }: { dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number }) {
+function RadarSvg({ dims, series, max, answered, total }: {
+  dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
+  answered: number[]; total: number;
+}) {
   const N = dims.length;
+  const [hover, setHover] = useState<number | null>(null);
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  const size = 340, cx = size / 2, cy = size / 2, R = size / 2 - 62;
+  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 74;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
     const r = (Math.max(0, Math.min(max, v)) / max) * R;
@@ -974,31 +978,64 @@ function RadarSvg({ dims, series, max }: { dims: string[]; series: { name: strin
   const rings = [0.25, 0.5, 0.75, 1];
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg">
+      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
         {rings.map((f, ri) => (
           <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, max * f).join(",")).join(" ")} />
         ))}
         {dims.map((d, i) => {
           const [ax, ay] = point(i, max);
-          const lx = cx + (R + 18) * Math.cos(angle(i));
-          const ly = cy + (R + 18) * Math.sin(angle(i));
+          const lx = cx + (R + 20) * Math.cos(angle(i));
+          const ly = cy + (R + 20) * Math.sin(angle(i));
           const anchor = Math.abs(lx - cx) < 10 ? "middle" : lx > cx ? "start" : "end";
           return (
             <g key={i}>
-              <line className="vr-radar-axis" x1={cx} y1={cy} x2={ax} y2={ay} />
-              <text className="vr-radar-label" x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle">
-                {d.length > 18 ? d.slice(0, 17) + "…" : d}
+              <line className={hover === i ? "vr-radar-axis on" : "vr-radar-axis"} x1={cx} y1={cy} x2={ax} y2={ay} />
+              <text className={hover === i ? "vr-radar-label on" : "vr-radar-label"} x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle">
+                <tspan x={lx} dy="-0.3em">{d.length > 16 ? d.slice(0, 15) + "…" : d}</tspan>
+                <tspan x={lx} dy="1.15em" className="vr-radar-count">{answered[i] ?? 0}/{total} resp.</tspan>
               </text>
             </g>
           );
         })}
         {series.map((s, si) => (
-          <polygon key={si} className="vr-radar-series" points={poly(s.values)} style={{ stroke: s.color, fill: s.color }} />
+          <polygon key={si} className="vr-radar-series" points={poly(s.values)}
+            style={{ stroke: s.color, fill: s.color, fillOpacity: hover === null ? 0.12 : 0.06 }} />
         ))}
+        {/* vértice destacado na dimensão sob o mouse */}
+        {hover !== null && series.map((s, si) => {
+          const [px, py] = point(hover, s.values[hover] ?? 0);
+          return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
+        })}
+        {/* áreas invisíveis por dimensão (hover) */}
+        {dims.map((_, i) => {
+          const [ex, ey] = point(i, max);
+          return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
+            style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
+        })}
+        {/* tooltip */}
+        {hover !== null && (() => {
+          const [ox, oy] = point(hover, max);
+          const w = 150, h = 26 + series.length * 15;
+          const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 6 : ox + 6));
+          const y = Math.max(4, Math.min(size - h - 4, oy - h / 2));
+          return (
+            <foreignObject x={x} y={y} width={w} height={h}>
+              <div className="vr-radar-tip">
+                <div className="vr-radar-tip-h">{dims[hover]}</div>
+                <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
+                {series.map((s) => (
+                  <div key={s.name} className="vr-radar-tip-row">
+                    <i style={{ background: s.color }} />{s.name}: <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
+                  </div>
+                ))}
+              </div>
+            </foreignObject>
+          );
+        })()}
       </svg>
       <div className="vr-radar-legend">
-        {series.map((s, si) => (
-          <span key={si} className="vr-radar-leg"><i style={{ background: s.color }} />{s.name}</span>
+        {series.map((s) => (
+          <span key={s.name} className="vr-radar-leg"><i style={{ background: s.color }} />{s.name}</span>
         ))}
       </div>
     </div>

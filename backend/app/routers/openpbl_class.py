@@ -370,39 +370,152 @@ async def sync_groups(room_id: str, user: CurrentUser = Depends(get_current_user
     return {"ok": True, "groups": n}
 
 
+def _parse_listar_grupos(raw) -> list:
+    """`listarGrupos` devolve `data` como string em notação JS: `{[ {...}, {...} ]}`
+    com aspas simples e \\r\\n (INVÁLIDO como JSON). Normaliza e parseia."""
+    if isinstance(raw, list):
+        return raw
+    if not isinstance(raw, str):
+        return []
+    s = raw.strip()
+    if s.startswith("{") and s.endswith("}"):
+        s = s[1:-1].strip()                # remove o wrapper { } → resta [ ... ]
+    s = s.replace("'", '"')
+    try:
+        data = json.loads(s)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+async def _openpbl_student_ids(client: httpx.AsyncClient, base: str, ccid: str) -> dict:
+    """email(lower) → (studentId, name), via listarGrupos (traz Id+Email de todos)."""
+    out: dict[str, tuple[str, str]] = {}
+    try:
+        r = await client.get(f"{base}/api/ClassRoomStudent/listarGrupos/{ccid}",
+                             headers=_integration_headers())
+        if r.status_code != 200:
+            return out
+        payload = r.json() or {}
+    except Exception:
+        return out
+    for g in _parse_listar_grupos(payload.get("data") if isinstance(payload, dict) else payload):
+        for a in (g.get("Alunos") or []):
+            email = (a.get("Email") or "").strip().lower()
+            sid = a.get("Id")
+            if email and sid:
+                out[email] = (sid, a.get("Name") or "")
+    return out
+
+
+async def _student_perf(client: httpx.AsyncClient, base: str, sid: str, dims_id: str):
+    """Notas individuais do aluno no Questionário de Riscos → {dimensions, grades, baseGrades}."""
+    try:
+        r = await client.get(f"{base}/api/PerformanceEvaluation/performance/{sid}/{dims_id}")
+        if r.status_code != 200:
+            return None
+        d = (r.json() or {}).get("data")
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+
+
+_chart_cache: dict[str, tuple[float, dict]] = {}
+_CHART_TTL = 4.0
+
+
 @router.get("/{room_id}/openpbl/risk-chart")
 async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)):
-    """Dados agregados do Questionário de Riscos (radar), como o gráfico do chat do
-    pacote. Fonte: integration `PerformanceEvaluation/performance-groups/{code}`.
-    Precisa do `openpbl_dimensions_id` (selecionado na criação da sala)."""
+    """Radar do Questionário de Riscos agregado pelos GRUPOS DA WEBCONF (os grupos
+    do pacote não batem com os nossos). Busca as respostas individuais
+    (`performance/{studentId}/{dims}`) e média por grupo + contagem de quem respondeu."""
     await _require_host(user)
     cls = await _get_class(room_id)
     if not cls:
         return {"available": False, "reason": "class_not_started"}
     room = await pool().fetchrow("SELECT openpbl_dimensions_id FROM video_rooms WHERE id=$1", room_id)
-    dims_id = (room["openpbl_dimensions_id"] if room else None) or ""
-    if not dims_id.strip():
+    dims_id = ((room["openpbl_dimensions_id"] if room else None) or "").strip()
+    if not dims_id:
         return {"available": False, "reason": "no_dimensions_id"}
 
-    base = settings.openpbl_integration_url.rstrip("/")
-    code = cls["presentation_code"]
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get(
-                f"{base}/api/PerformanceEvaluation/performance-groups/{code}",
-                params={"dimensionsId": dims_id.strip()},
-                headers={"Accept": "application/json"})
-        if r.status_code != 200:
-            return {"available": False, "reason": f"http_{r.status_code}"}
-        data = r.json()
-    except Exception:
-        return {"available": False, "reason": "fetch_error"}
+    now = time.monotonic()
+    hit = _chart_cache.get(room_id)
+    if hit and (now - hit[0]) < _CHART_TTL:
+        return hit[1]
 
-    # A resposta pode vir embrulhada em {data:{...}} ou direta.
-    payload = data.get("data") if isinstance(data, dict) and "data" in data else data
-    if not isinstance(payload, dict) or not payload.get("dimensions"):
+    base = settings.openpbl_integration_url.rstrip("/")
+    ccid = cls["class_course_id"]
+
+    async with httpx.AsyncClient(timeout=15) as c:
+        email_to_sid = await _openpbl_student_ids(c, base, ccid)
+        if not email_to_sid:
+            return {"available": False, "reason": "no_students"}
+
+        groups = await pool().fetch(
+            "SELECT id, name FROM video_breakout_groups WHERE parent_room_id=$1 ORDER BY position", room_id)
+        assigns = await pool().fetch(
+            "SELECT group_id, identity FROM video_breakout_assignments WHERE parent_room_id=$1", room_id)
+        parts = await pool().fetch(
+            "SELECT user_id, email FROM video_room_participants WHERE room_id=$1", room_id)
+        id_to_email = {p["user_id"]: (p["email"] or "").strip().lower() for p in parts}
+
+        group_emails: dict[str, list] = {}
+        for a in assigns:
+            em = id_to_email.get(a["identity"])
+            if em and em in email_to_sid:
+                group_emails.setdefault(str(a["group_id"]), []).append(em)
+
+        all_emails = {em for ems in group_emails.values() for em in ems} or set(email_to_sid.keys())
+        sid_list = [(em, email_to_sid[em][0]) for em in all_emails]
+        perfs = await asyncio.gather(*[_student_perf(c, base, sid, dims_id) for (_, sid) in sid_list])
+    perf_by_email = {em: p for (em, _), p in zip(sid_list, perfs)}
+
+    dims = base_grades = None
+    for p in perfs:
+        if p and p.get("dimensions"):
+            dims = p["dimensions"]; base_grades = p.get("baseGrades"); break
+    if not dims:
         return {"available": False, "reason": "empty"}
-    return {"available": True, "chart": payload}
+    D = len(dims)
+
+    def grade(p, i):
+        g = (p or {}).get("grades") or []
+        return g[i] if i < len(g) and isinstance(g[i], (int, float)) else 0
+
+    def avg_over(emails):
+        s = [0.0] * D; c = [0] * D
+        for em in emails:
+            p = perf_by_email.get(em)
+            for i in range(D):
+                v = grade(p, i)
+                if v > 0:
+                    s[i] += v; c[i] += 1
+        return [(s[i] / c[i]) if c[i] else 0 for i in range(D)]
+
+    # quem respondeu cada dimensão (grade > 0), no total da turma
+    answered = [0] * D
+    for em in all_emails:
+        p = perf_by_email.get(em)
+        for i in range(D):
+            if grade(p, i) > 0:
+                answered[i] += 1
+
+    out_groups = [
+        {"name": g["name"], "grades": avg_over(group_emails.get(str(g["id"]), [])),
+         "size": len(group_emails.get(str(g["id"]), []))}
+        for g in groups if group_emails.get(str(g["id"]))
+    ]
+
+    result = {"available": True, "chart": {
+        "dimensions": dims,
+        "baseGrades": base_grades or [],
+        "classAverage": avg_over(all_emails),
+        "groups": out_groups,
+        "answered": answered,
+        "total": len(all_emails),
+    }}
+    _chart_cache[room_id] = (now, result)
+    return result
 
 
 _STAGES = ("presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done")

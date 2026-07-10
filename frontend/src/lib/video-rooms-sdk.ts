@@ -252,9 +252,10 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
         call<OpenPblClass>(`/api/rooms/${roomId}/openpbl/stage`, {
           method: "POST", body: JSON.stringify({ stage }),
         }),
-      /** Dados do gráfico radar do Questionário de Riscos (agregado por grupo). */
+      /** Dados do gráfico radar do Questionário de Riscos — agregado pelos grupos
+       *  da webconf (respostas individuais) + contagem de quem respondeu por dimensão. */
       riskChart: (roomId: string) =>
-        call<{ available: boolean; reason?: string; chart?: { dimensions: string[]; baseGrades: number[]; groupAverageGrades: number[]; groups: { grades: number[] }[] } }>(
+        call<{ available: boolean; reason?: string; chart?: { dimensions: string[]; baseGrades: number[]; classAverage: number[]; groups: { name: string; grades: number[]; size: number }[]; answered: number[]; total: number } }>(
           `/api/rooms/${roomId}/openpbl/risk-chart`),
       /** Status por participante p/ bordas dos tiles (verde=no pacote, vermelho=fora)
        *  + badge de registrado. Público — todo cliente da sala faz polling. */
