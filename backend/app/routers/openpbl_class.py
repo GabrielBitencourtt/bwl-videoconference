@@ -181,6 +181,19 @@ async def release_gate(room_id: str, body: ClassRelease, user: CurrentUser = Dep
         if r.status_code != 200:
             raise HTTPException(502, f"OpenPBL release falhou ({r.status_code})")
 
+        # Push em tempo real (SSE) para os alunos conectados ao pacote: destrava na
+        # hora, sem depender do polling. Mesmo canal do facilitador (classCourseId).
+        # gate: "risks"->"riscos", "perceptions"->"percepcoes" (nomes que o pagetreat
+        # espera). Best-effort — se o Scorm/Redis falhar, o fallback do pacote cobre.
+        try:
+            rt_gate = "riscos" if body.gate == "risks" else "percepcoes"
+            await c.post(
+                f"{settings.scorm_lrs_url.rstrip('/')}/realtime/class/{ccid}/release",
+                json={"gate": rt_gate, "released": True},
+            )
+        except Exception:
+            pass
+
     field = "released_dimensions" if body.gate == "risks" else "released"
     await pool().execute(
         f"UPDATE video_room_openpbl_class SET {field}=true WHERE room_id=$1", room_id)
