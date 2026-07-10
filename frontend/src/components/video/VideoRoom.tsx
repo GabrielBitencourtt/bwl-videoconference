@@ -919,6 +919,22 @@ function ActivityBar({ stage, cls, presenting, busy, breakoutOpen, onAction, onA
 
 const RISK_COLORS = ["#13c2c2", "#1890ff", "#2f54eb", "#722ed1", "#a0d911", "#52c41a", "#f4664a", "#faad14"];
 
+/** Quebra um rótulo em até 2 linhas (por palavra), elipsando o excedente. */
+function wrapText(text: string, max: number): string[] {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (t.length <= max || !cur) cur = t;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  let out = lines.slice(0, 2);
+  if (lines.length > 2 && out.length === 2) out[1] += "…";
+  return out.map((l) => (l.length > 17 ? l.slice(0, 16) + "…" : l));
+}
+
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
 function RiskChart({ roomId }: { roomId: string }) {
@@ -968,7 +984,7 @@ function RadarSvg({ dims, series, max, answered, total }: {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 74;
+  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 94;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
     const r = (Math.max(0, Math.min(max, v)) / max) * R;
@@ -984,15 +1000,18 @@ function RadarSvg({ dims, series, max, answered, total }: {
         ))}
         {dims.map((d, i) => {
           const [ax, ay] = point(i, max);
-          const lx = cx + (R + 20) * Math.cos(angle(i));
-          const ly = cy + (R + 20) * Math.sin(angle(i));
-          const anchor = Math.abs(lx - cx) < 10 ? "middle" : lx > cx ? "start" : "end";
+          const lx = cx + (R + 14) * Math.cos(angle(i));
+          const ly = cy + (R + 14) * Math.sin(angle(i));
+          const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
+          const nameLines = wrapText(d, 15);
+          const rows = nameLines.length + 1;                  // + a linha do contador
+          const y0 = ly - ((rows - 1) * 11) / 2;
           return (
             <g key={i}>
               <line className={hover === i ? "vr-radar-axis on" : "vr-radar-axis"} x1={cx} y1={cy} x2={ax} y2={ay} />
-              <text className={hover === i ? "vr-radar-label on" : "vr-radar-label"} x={lx} y={ly} textAnchor={anchor} dominantBaseline="middle">
-                <tspan x={lx} dy="-0.3em">{d.length > 16 ? d.slice(0, 15) + "…" : d}</tspan>
-                <tspan x={lx} dy="1.15em" className="vr-radar-count">{answered[i] ?? 0}/{total} resp.</tspan>
+              <text className={hover === i ? "vr-radar-label on" : "vr-radar-label"} x={lx} y={y0} textAnchor={anchor}>
+                {nameLines.map((ln, k) => <tspan key={k} x={lx} dy={k === 0 ? 0 : 11}>{ln}</tspan>)}
+                <tspan x={lx} dy={11} className="vr-radar-count">{answered[i] ?? 0}/{total} resp.</tspan>
               </text>
             </g>
           );
