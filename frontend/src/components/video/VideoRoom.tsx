@@ -590,12 +590,25 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [chartHidden, setChartHidden] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
 
-  const STAGE_ORDER: OpenPblStage[] = ["presentation", "close", "risks", "perceptions", "done"];
+  // Estado global dos grupos (breakout aberto?) — p/ as etapas Abrir/Encerrar grupos.
+  const [breakoutOpen, setBreakoutOpen] = useState(false);
+  useEffect(() => {
+    if (!scorm) return;
+    sdk.breakouts.state(roomId).then((s) => setBreakoutOpen(!!s.open)).catch(() => {});
+    return sdk.subscribe(roomId, (event, payload) => {
+      if (event === "breakout-open") setBreakoutOpen(true);
+      else if (event === "breakout-close") setBreakoutOpen(false);
+      else if (event === "breakout-state") setBreakoutOpen(!!payload?.open);
+    });
+  }, [scorm, roomId]);
+
+  const STAGE_ORDER: OpenPblStage[] = ["presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done"];
   const advanceStage = async () => {
     const i = STAGE_ORDER.indexOf(pblStage);
     const next = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)];
     if (next === pblStage) return;
-    if (pblStage === "presentation" && presenting) await togglePresent();  // fecha a transmissão ao sair da apresentação
+    if (pblStage === "presentation" && presenting) await togglePresent();     // fecha a transmissão ao sair da apresentação
+    if (pblStage === "close_groups" && breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});  // garante alunos de volta antes dos questionários
     try { setPblClass(await sdk.openpbl.setStage(roomId, next)); } catch { /* */ }
   };
   const doStageAction = async () => {
@@ -603,6 +616,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     try {
       if (pblStage === "presentation") await togglePresent();
       else if (pblStage === "close") { await sdk.openpbl.closeRegistration(roomId); await sdk.openpbl.syncGroups(roomId).catch(() => {}); }
+      else if (pblStage === "open_groups") await sdk.breakouts.open(roomId);    // sem duração = sem timer
+      else if (pblStage === "close_groups") await sdk.breakouts.close(roomId);
       else if (pblStage === "risks") await sdk.openpbl.release(roomId, "risks");
       else if (pblStage === "perceptions") await sdk.openpbl.release(roomId, "perceptions");
     } catch { /* silencioso: o painel OpenPBL mostra erros detalhados */ }
@@ -622,7 +637,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {/* Barra do facilitador (sequenciador ▶), centrada entre a marca e os controles. */}
         {pblHost && (
           <ActivityBar
-            stage={pblStage} cls={pblClass} presenting={presenting} busy={stageBusy}
+            stage={pblStage} cls={pblClass} presenting={presenting} busy={stageBusy} breakoutOpen={breakoutOpen}
             onAction={doStageAction} onAdvance={advanceStage}
             chartAvailable={chartAvailable} chartHidden={chartHidden}
             onToggleChart={() => setChartHidden((h) => !h)}
@@ -840,17 +855,23 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
 const STAGE_LABELS: Record<OpenPblStage, string> = {
   presentation: "Apresentação",
   close: "Encerrar registro",
+  open_groups: "Abrir grupos",
+  close_groups: "Encerrar grupos",
   risks: "Questionário de Riscos",
   perceptions: "Questionário de Percepções",
   done: "Aula concluída",
 };
 
-function stageAction(stage: OpenPblStage, cls: any, presenting: boolean): { label: string; done: boolean; danger?: boolean } | null {
+function stageAction(stage: OpenPblStage, cls: any, presenting: boolean, breakoutOpen: boolean): { label: string; done: boolean; danger?: boolean } | null {
   switch (stage) {
     case "presentation":
       return { label: presenting ? "Parar transmissão" : "Apresentar aos alunos", done: false, danger: presenting };
     case "close":
       return { label: cls?.checking_open === false ? "✓ Registro encerrado" : "Encerrar Registro", done: cls?.checking_open === false };
+    case "open_groups":
+      return { label: breakoutOpen ? "✓ Grupos abertos" : "Abrir Grupos", done: breakoutOpen };
+    case "close_groups":
+      return { label: breakoutOpen ? "Encerrar Grupos" : "✓ Grupos encerrados", done: !breakoutOpen, danger: breakoutOpen };
     case "risks":
       return { label: cls?.released_dimensions ? "✓ Riscos liberado" : "Liberar Questionário de Riscos", done: !!cls?.released_dimensions };
     case "perceptions":
@@ -860,12 +881,12 @@ function stageAction(stage: OpenPblStage, cls: any, presenting: boolean): { labe
   }
 }
 
-function ActivityBar({ stage, cls, presenting, busy, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
-  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean;
+function ActivityBar({ stage, cls, presenting, busy, breakoutOpen, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
+  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean; breakoutOpen: boolean;
   onAction: () => void; onAdvance: () => void;
   chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
 }) {
-  const act = stageAction(stage, cls, presenting);
+  const act = stageAction(stage, cls, presenting, breakoutOpen);
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">

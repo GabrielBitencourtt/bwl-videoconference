@@ -405,7 +405,7 @@ async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)
     return {"available": True, "chart": payload}
 
 
-_STAGES = ("presentation", "close", "risks", "perceptions", "done")
+_STAGES = ("presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done")
 
 
 class StageSet(BaseModel):

@@ -100,7 +100,7 @@ export interface OpenPblClass {
   stage?: OpenPblStage;            // sequenciamento do ▶
 }
 
-export type OpenPblStage = "presentation" | "close" | "risks" | "perceptions" | "done";
+export type OpenPblStage = "presentation" | "close" | "open_groups" | "close_groups" | "risks" | "perceptions" | "done";
 
 export interface BreakoutMember { identity: string; display_name: string }
 export interface BreakoutGroup {
