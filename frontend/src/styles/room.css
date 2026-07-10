@@ -717,14 +717,16 @@
 .vr-radar-series { stroke-width: 2; stroke-linejoin: round; }
 /* Tooltip do radar (foreignObject) */
 .vr-radar-tip {
+  box-sizing: border-box; width: 100%;
   background: #0f172a; color: #f1f5f9; border-radius: 8px; padding: 6px 8px;
-  font-size: 10.5px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  font-size: 10.5px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }
 .vr-radar-tip-h { font-weight: 700; font-size: 11px; margin-bottom: 1px; }
 .vr-radar-tip-a { color: #38bdf8; font-weight: 600; margin-bottom: 3px; }
-.vr-radar-tip-row { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.vr-radar-tip-row { display: flex; align-items: center; gap: 5px; }
 .vr-radar-tip-row i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
-.vr-radar-tip-row b { margin-left: auto; }
+.vr-radar-tip-n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vr-radar-tip-row b { flex: none; margin-left: 6px; }
 .vr-radar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; margin-top: 8px; font-size: 11px; }
 .vr-radar-leg { display: inline-flex; align-items: center; gap: 5px; color: #334155; }
 .vr-radar-leg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }

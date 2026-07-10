@@ -1031,20 +1031,21 @@ function RadarSvg({ dims, series, max, answered, total }: {
           return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
-        {/* tooltip */}
+        {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
         {hover !== null && (() => {
           const [ox, oy] = point(hover, max);
-          const w = 150, h = 26 + series.length * 15;
-          const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 6 : ox + 6));
+          const w = 176, h = 60 + series.length * 15;
+          const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
           const y = Math.max(4, Math.min(size - h - 4, oy - h / 2));
           return (
-            <foreignObject x={x} y={y} width={w} height={h}>
+            <foreignObject x={x} y={y} width={w} height={h} style={{ overflow: "visible" }}>
               <div className="vr-radar-tip">
                 <div className="vr-radar-tip-h">{dims[hover]}</div>
                 <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
                 {series.map((s) => (
                   <div key={s.name} className="vr-radar-tip-row">
-                    <i style={{ background: s.color }} />{s.name}: <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
+                    <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
+                    <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
                   </div>
                 ))}
               </div>
