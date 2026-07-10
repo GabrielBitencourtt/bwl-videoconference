@@ -707,13 +707,13 @@
   text-align: center; padding: 24px; font-size: 13px; color: #475569; background: #fff;
 }
 .vr-radar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
-.vr-radar-svg { width: 100%; max-width: 360px; height: auto; }
+.vr-radar-svg { width: 100%; max-width: 460px; height: auto; }
 .vr-radar-ring { fill: none; stroke: #e2e8f0; stroke-width: 1; }
 .vr-radar-axis { stroke: #e2e8f0; stroke-width: 1; }
 .vr-radar-axis.on { stroke: #94a3b8; stroke-width: 1.5; }
-.vr-radar-label { fill: #334155; font-size: 10px; }
+.vr-radar-label { fill: #334155; font-size: 8.5px; }
 .vr-radar-label.on { fill: #0f172a; font-weight: 700; }
-.vr-radar-count { fill: #94a3b8; font-size: 8.5px; }
+.vr-radar-count { fill: #94a3b8; font-size: 7.5px; }
 .vr-radar-series { stroke-width: 2; stroke-linejoin: round; }
 /* Tooltip do radar (foreignObject) */
 .vr-radar-tip {

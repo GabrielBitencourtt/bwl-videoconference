@@ -984,7 +984,7 @@ function RadarSvg({ dims, series, max, answered, total }: {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 94;
+  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 72;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
     const r = (Math.max(0, Math.min(max, v)) / max) * R;
@@ -1000,10 +1000,10 @@ function RadarSvg({ dims, series, max, answered, total }: {
         ))}
         {dims.map((d, i) => {
           const [ax, ay] = point(i, max);
-          const lx = cx + (R + 14) * Math.cos(angle(i));
-          const ly = cy + (R + 14) * Math.sin(angle(i));
+          const lx = cx + (R + 10) * Math.cos(angle(i));
+          const ly = cy + (R + 10) * Math.sin(angle(i));
           const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
-          const nameLines = wrapText(d, 15);
+          const nameLines = wrapText(d, 14);
           const rows = nameLines.length + 1;                  // + a linha do contador
           const y0 = ly - ((rows - 1) * 11) / 2;
           return (
