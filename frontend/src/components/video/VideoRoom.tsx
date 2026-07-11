@@ -603,12 +603,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   }, [scorm, roomId]);
 
   const STAGE_ORDER: OpenPblStage[] = ["presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done"];
+  // Plenária: os alunos voltam dos grupos automaticamente e a tela passa a gravar.
+  const startPlenaria = async () => {
+    if (breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});           // alunos voltam à sala principal
+    if (!recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }  // grava a tela
+  };
   const advanceStage = async () => {
     const i = STAGE_ORDER.indexOf(pblStage);
     const next = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)];
     if (next === pblStage) return;
     if (pblStage === "presentation" && presenting) await togglePresent();     // fecha a transmissão ao sair da apresentação
-    if (pblStage === "close_groups" && breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});  // garante alunos de volta antes dos questionários
+    if (next === "close_groups") await startPlenaria();                       // ao entrar na plenária: alunos voltam + grava automático
     try { setPblClass(await sdk.openpbl.setStage(roomId, next)); } catch { /* */ }
   };
   const doStageAction = async () => {
@@ -617,7 +622,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       if (pblStage === "presentation") await togglePresent();
       else if (pblStage === "close") { await sdk.openpbl.closeRegistration(roomId); await sdk.openpbl.syncGroups(roomId).catch(() => {}); }
       else if (pblStage === "open_groups") await sdk.breakouts.open(roomId);    // sem duração = sem timer
-      else if (pblStage === "close_groups") await sdk.breakouts.close(roomId);
+      else if (pblStage === "close_groups") await startPlenaria();             // trazer alunos de volta + gravar a plenária
       else if (pblStage === "risks") await sdk.openpbl.release(roomId, "risks");
       else if (pblStage === "perceptions") await sdk.openpbl.release(roomId, "perceptions");
     } catch { /* silencioso: o painel OpenPBL mostra erros detalhados */ }
@@ -638,6 +643,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {pblHost && (
           <ActivityBar
             stage={pblStage} cls={pblClass} presenting={presenting} busy={stageBusy} breakoutOpen={breakoutOpen}
+            recording={recording}
             onAction={doStageAction} onAdvance={advanceStage}
             chartAvailable={chartAvailable} chartHidden={chartHidden}
             onToggleChart={() => setChartHidden((h) => !h)}
@@ -855,43 +861,55 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
 const STAGE_LABELS: Record<OpenPblStage, string> = {
   presentation: "Apresentação",
   close: "Encerrar registro",
-  open_groups: "Abrir grupos",
-  close_groups: "Encerrar grupos",
+  open_groups: "Dividir grupos",
+  close_groups: "Plenária",
   risks: "Questionário de Riscos",
   perceptions: "Questionário de Percepções",
   done: "Aula concluída",
 };
 
-function stageAction(stage: OpenPblStage, cls: any, presenting: boolean, breakoutOpen: boolean): { label: string; done: boolean; danger?: boolean } | null {
+/** Ordem visível do sequenciador (sem "done") — base do contador "Etapa X de N". */
+const STAGE_FLOW: OpenPblStage[] = ["presentation", "close", "open_groups", "close_groups", "risks", "perceptions"];
+
+function stageAction(stage: OpenPblStage, cls: any, presenting: boolean, breakoutOpen: boolean, recording: boolean): { label: string; done: boolean; danger?: boolean } | null {
   switch (stage) {
     case "presentation":
       return { label: presenting ? "Parar transmissão" : "Apresentar aos alunos", done: false, danger: presenting };
     case "close":
-      return { label: cls?.checking_open === false ? "✓ Registro encerrado" : "Encerrar Registro", done: cls?.checking_open === false };
+      return { label: cls?.checking_open === false ? "✓ Registro encerrado" : "Encerrar registro", done: cls?.checking_open === false };
     case "open_groups":
-      return { label: breakoutOpen ? "✓ Grupos abertos" : "Abrir Grupos", done: breakoutOpen };
-    case "close_groups":
-      return { label: breakoutOpen ? "Encerrar Grupos" : "✓ Grupos encerrados", done: !breakoutOpen, danger: breakoutOpen };
+      return { label: breakoutOpen ? "✓ Grupos divididos" : "Dividir grupos", done: breakoutOpen };
+    case "close_groups": {
+      // Plenária: alunos de volta à sala principal + gravação de tela em andamento.
+      const ready = !breakoutOpen && recording;
+      return { label: ready ? "● Gravando plenária" : "Iniciar plenária", done: ready };
+    }
     case "risks":
-      return { label: cls?.released_dimensions ? "✓ Riscos liberado" : "Liberar Questionário de Riscos", done: !!cls?.released_dimensions };
+      return { label: cls?.released_dimensions ? "✓ Riscos liberado" : "Liberar questionário de Riscos", done: !!cls?.released_dimensions };
     case "perceptions":
-      return { label: cls?.released ? "✓ Percepções liberado" : "Liberar Questionário de Percepções", done: !!cls?.released };
+      return { label: cls?.released ? "✓ Percepções liberado" : "Liberar questionário de Percepções", done: !!cls?.released };
     default:
       return null;
   }
 }
 
-function ActivityBar({ stage, cls, presenting, busy, breakoutOpen, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
-  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean; breakoutOpen: boolean;
+function ActivityBar({ stage, cls, presenting, busy, breakoutOpen, recording, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
+  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean; breakoutOpen: boolean; recording: boolean;
   onAction: () => void; onAdvance: () => void;
   chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
 }) {
-  const act = stageAction(stage, cls, presenting, breakoutOpen);
+  const act = stageAction(stage, cls, presenting, breakoutOpen, recording);
+  const step = STAGE_FLOW.indexOf(stage);
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
-        <span className="vr-actbar-cap">Etapa atual</span>
+        <span className="vr-actbar-cap">{step >= 0 ? `Etapa ${step + 1} de ${STAGE_FLOW.length}` : "Etapa atual"}</span>
         <span className="vr-actbar-name">{STAGE_LABELS[stage]}</span>
+        {step >= 0 && (
+          <div className="vr-actbar-prog" aria-hidden>
+            <i style={{ width: `${((step + 1) / STAGE_FLOW.length) * 100}%` }} />
+          </div>
+        )}
       </div>
       {chartAvailable && (
         <button className="vr-actbar-ghost" onClick={onToggleChart} title="Mostrar/ocultar o gráfico de riscos">
@@ -1630,55 +1648,20 @@ function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsA
 }) {
   const mic = useTrackToggle({ source: Track.Source.Microphone });
   const cam = useTrackToggle({ source: Track.Source.Camera });
-  const screen = useTrackToggle({ source: Track.Source.ScreenShare });
   const room = useRoomContext();
-  const [moreOpen, setMoreOpen] = useState(false);
 
+  // Barra enxuta: só microfone, câmera, chat e sair (encerrar sala fica no topo).
   return (
     <div className="vr-controls">
       <Ctrl label="Microfone" icon={mic.enabled ? I.mic : I.micOff} title={mic.enabled ? "Desligar microfone" : "Ligar microfone"}
         off={!mic.enabled} disabled={mic.pending} onClick={() => mic.toggle()} />
       <Ctrl label="Câmera" icon={cam.enabled ? I.cam : I.camOff} title={cam.enabled ? "Desligar câmera" : "Ligar câmera"}
         off={!cam.enabled} disabled={cam.pending} onClick={() => cam.toggle()} />
-      <Ctrl label="Compartilhar" icon={I.screen} title="Compartilhar tela"
-        active={screen.enabled} disabled={screen.pending} onClick={() => screen.toggle()} />
-      {isStaff && (
-        <Ctrl label="Gravar" icon={recording ? I.stop : I.record} className="vr-rec-btn"
-          title={recording ? "Parar gravação" : "Iniciar gravação"}
-          active={recording} onClick={onToggleRecording} />
-      )}
 
       <div className="vr-sep" />
 
       <Ctrl label="Chat" icon={I.chat} active={panel === "chat"}
         onClick={() => setPanel(panel === "chat" ? null : "chat")} />
-      {isStaff && (
-        <Ctrl label="Grupos" icon={I.groups} active={panel === "breakout"}
-          onClick={() => setPanel(panel === "breakout" ? null : "breakout")} />
-      )}
-
-      {/* Participantes e quadro branco saíram da barra e vivem aqui — sem isto os
-          alunos, que não veem "Grupos"/OpenPBL, perderiam acesso aos recursos. */}
-      <div className="vr-ctrl-more">
-        <Ctrl label="Mais" icon={I.more} title="Mais (participantes, quadro, configurações)"
-          active={moreOpen || panel === "people" || panel === "scorm" || settingsActive || boardActive}
-          onClick={() => setMoreOpen((o) => !o)} />
-        {moreOpen && (
-          <>
-            <div className="vr-menu-backdrop" onClick={() => setMoreOpen(false)} />
-            <div className="vr-ctrl-menu">
-              <button onClick={() => { setPanel(panel === "people" ? null : "people"); setMoreOpen(false); }}>
-                {I.people} Participantes ({peopleCount})
-              </button>
-              <button onClick={() => { onToggleBoard(); setMoreOpen(false); }}>
-                {I.board} {boardActive ? "Fechar quadro" : "Quadro branco"}
-              </button>
-              {scorm && isStaff && <button onClick={() => { setPanel("scorm"); setMoreOpen(false); }}>{I.board} OpenPBL</button>}
-              <button onClick={() => { onOpenSettings(); setMoreOpen(false); }}>{I.gear} Configurações</button>
-            </div>
-          </>
-        )}
-      </div>
 
       <div className="vr-sep" />
 
