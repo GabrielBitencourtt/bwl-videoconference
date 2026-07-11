@@ -63,6 +63,7 @@ const I = {
   eye: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
   eyeOff: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
   expand: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>,
+  copy: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
   playTri: <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
 };
@@ -432,7 +433,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
   const participants = useParticipants();
-  const elapsed = useElapsed();
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
   const canEditBoard = isStaff || boardEdit;
@@ -667,10 +667,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             onToggleRecording={toggleRecording}
           />
           <div className="vr-meta">
-            <span>{elapsed}</span>
-            <span className="vr-dot" />
-            <span><span className="vr-count-label">participantes: </span>{participants.length}</span>
             {recording && <span className="vr-rec">REC</span>}
+            {/* Encerrar sala: exclusivo do facilitador (host). */}
             {isStaff && (
               <button className="vr-end-btn" onClick={() => setConfirmEnd(true)} title="Encerrar a sala para todos">Encerrar sala</button>
             )}
@@ -1195,7 +1193,9 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
  *  O facilitador pode ocultar/reexibir o código (sincronizado p/ todos). */
 function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; roomId: string }) {
   const sdk = useSDK();
+  const room = useRoomContext();
   const [expand, setExpand] = useState(false);
+  const [copied, setCopied] = useState(false);
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
 
   const byId: Record<string, any> = {};
@@ -1210,6 +1210,49 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
   const toggle = () => sdk.openpbl.setCodeVisible(roomId, !hidden).catch(() => {});
   const showCard = !!code && !hidden;
 
+  // Copiar o código ao clicar — funciona no desktop e no mobile: usa a Clipboard
+  // API quando disponível (contexto seguro) e cai no fallback do <textarea> +
+  // execCommand quando não (iframe do embed, http, WebViews antigas de celular).
+  const copyCode = async () => {
+    if (!code) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(code);
+      else throw new Error("no-clipboard");
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = code; ta.readOnly = true;
+      ta.style.position = "fixed"; ta.style.top = "-9999px"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      ta.setSelectionRange(0, ta.value.length);   // iOS precisa do range explícito
+      try { document.execCommand("copy"); } catch { /* */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 1400);
+  };
+
+  // "Ampliar para todos": o facilitador transmite (via LiveKit data) o sinal e a
+  // sala inteira abre/fecha o código gigante junto. O aluno pode fechar o dele.
+  const broadcastExpand = (open: boolean) => {
+    try {
+      const data = new TextEncoder().encode(JSON.stringify({ source: "webconf", type: "code-expand", expanded: open }));
+      room?.localParticipant?.publishData(data, { reliable: true });
+    } catch { /* */ }
+  };
+  const openExpand = () => { setExpand(true); if (isHost) broadcastExpand(true); };
+  const closeExpand = () => { setExpand(false); if (isHost) broadcastExpand(false); };
+
+  useEffect(() => {
+    if (!room) return;
+    const onData = (payload: Uint8Array) => {
+      try {
+        const m = JSON.parse(new TextDecoder().decode(payload));
+        if (m?.source === "webconf" && m?.type === "code-expand") setExpand(!!m.expanded);
+      } catch { /* */ }
+    };
+    room.on(RoomEvent.DataReceived, onData);
+    return () => { room.off(RoomEvent.DataReceived, onData); };
+  }, [room]);
+
   if (!hostTrack && !code) return null;
   return (
     <div className="vr-pbl-head" data-wide={showCard ? undefined : "1"}>
@@ -1218,13 +1261,16 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
       {showCard && (
         <div className="vr-pbl-code-card">
           <div className="vr-pbl-code-top">
-            <span className="vr-pbl-code-label">Class code</span>
+            <span className="vr-pbl-code-label" data-copied={copied || undefined}>{copied ? "Copiado!" : "Class code"}</span>
             <div className="vr-pbl-code-tools">
               {isHost && <button className="vr-pbl-code-ico" onClick={toggle} title="Ocultar o código para todos">{I.eyeOff}</button>}
-              <button className="vr-pbl-code-ico" onClick={() => setExpand(true)} title="Ampliar">{I.expand}</button>
+              <button className="vr-pbl-code-ico" onClick={openExpand} title="Ampliar para todos os alunos">{I.expand}</button>
             </div>
           </div>
-          <span className="vr-pbl-code">{code}</span>
+          <button type="button" className="vr-pbl-code-btn" onClick={copyCode} title="Clique para copiar o código">
+            <span className="vr-pbl-code">{code}</span>
+            <span className="vr-pbl-code-copyico" aria-hidden>{I.copy}</span>
+          </button>
           {roster?.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
         </div>
       )}
@@ -1237,11 +1283,12 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
       )}
 
       {expand && code && (
-        <div className="vr-sheet-backdrop" onClick={() => setExpand(false)}>
+        <div className="vr-sheet-backdrop" onClick={closeExpand}>
           <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>
-            <button className="vr-sheet-close vr-pbl-big-x" onClick={() => setExpand(false)} aria-label="Fechar">✕</button>
+            <button className="vr-sheet-close vr-pbl-big-x" onClick={closeExpand} aria-label="Fechar">✕</button>
             <span className="vr-pbl-code-label">Class code</span>
-            <span className="vr-pbl-code-huge">{code}</span>
+            <button type="button" className="vr-pbl-code-huge" onClick={copyCode} title="Clique para copiar">{code}</button>
+            <span className="vr-pbl-code-hint">{copied ? "Copiado! ✓" : "toque para copiar"}</span>
           </div>
         </div>
       )}

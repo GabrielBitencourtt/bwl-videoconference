@@ -14,7 +14,7 @@
   --vr-danger: #ef4444;
   --vr-danger-hover: #f87171;
   --vr-radius: 14px;
-  --vr-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --vr-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 14px 32px -16px rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -89,6 +89,13 @@
 }
 .vr-grid-wrap .lk-participant-tile .lk-participant-name { font-weight: 500; }
 .lk-focus-toggle-button, .lk-participant-metadata { font-size: 12px; }
+/* Chip de nome translúcido (blur) — no lugar do bloco preto sólido. */
+.vr-grid-wrap .lk-participant-metadata,
+.vr-pbl-tile .lk-participant-metadata,
+.vr-pbl-head-cam .lk-participant-metadata {
+  background: rgba(10, 12, 20, .5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .1); border-radius: 8px; padding: 3px 6px;
+}
 
 /* ---------- Spotlight (compartilhamento de tela) ---------- */
 .vr-spotlight { position: relative; width: 100%; height: 100%; }
@@ -274,6 +281,8 @@
 }
 .vr-ctrl:hover .vr-ctrl-ico { background: var(--vr-surface-2); }
 .vr-ctrl:active .vr-ctrl-ico { transform: scale(.94); }
+.vr-ctrl:focus-visible { outline: none; }
+.vr-ctrl:focus-visible .vr-ctrl-ico { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
 .vr-ctrl svg { width: 20px; height: 20px; }
 .vr-ctrl-lbl { font-size: 10px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
 .vr-ctrl:disabled { opacity: .5; cursor: default; }
@@ -315,8 +324,18 @@
 .vr-center { flex: 1; display: grid; place-items: center; color: var(--vr-text-dim); }
 
 @media (max-width: 768px) {
-  /* Header compacto */
-  .vr-header { padding: 8px 10px; gap: 8px; }
+  /* Header compacto: marca + controles na 1ª linha; sequenciador na 2ª (largura
+     total), sem estourar a tela. */
+  .vr-header { padding: 8px 10px; gap: 8px 10px; flex-wrap: wrap; overflow-x: hidden; }
+  .vr-brand { order: 1; flex: 1 1 auto; min-width: 0; }
+  .vr-header-right { order: 2; }
+  /* Sequenciador: info na 1ª linha, ação + ▶ na 2ª — largura travada no container
+     (box-sizing) e ação encolhível para o ▶ nunca cortar na borda. */
+  .vr-actbar { order: 3; flex: 0 0 100%; width: 100%; box-sizing: border-box; max-width: 100%; margin: 4px 0 0; padding: 8px 12px; flex-wrap: wrap; }
+  .vr-actbar-info { min-width: 0; flex: 1 1 100%; }
+  .vr-actbar-name { font-size: 17px; }
+  .vr-actbar-present { flex: 1 1 auto; min-width: 0; }
+  .vr-actbar-next { flex: none; }
   .vr-title { font-size: 14px; }
   .vr-meta { gap: 8px; font-size: 12px; }
   .vr-meta .vr-count-label { display: none; }
@@ -584,7 +603,7 @@
    topo, apresentação preenchendo o resto — tudo dentro de um mesmo cartão, com
    uma só borda/sombra e divisórias sutis (nada de caixas soltas destoantes). */
 .vr-pbl-side {
-  width: 42%; flex: none; display: flex; flex-direction: column; gap: 0; min-height: 0;
+  width: 50%; flex: none; display: flex; flex-direction: column; gap: 0; min-height: 0;
   background: var(--vr-surface);
   border: 1px solid var(--vr-border);
   border-radius: var(--vr-radius);
@@ -596,23 +615,44 @@
   flex: none; flex-direction: row; align-items: stretch;
   gap: 10px; padding: 12px; border-bottom: 1px solid var(--vr-border); background: transparent;
 }
+/* Câmera do facilitador compacta (16/9) para a APRESENTAÇÃO abaixo dominar. */
 .vr-pbl-side .vr-pbl-head-cam {
-  flex: 1 1 auto; width: auto; min-width: 0; aspect-ratio: 16 / 10;
+  flex: 1 1 auto; width: auto; min-width: 0; aspect-ratio: 16 / 9; max-height: 30vh;
   border: 1px solid var(--vr-border);
   box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.5);   /* anel accent discreto marca o facilitador */
 }
 .vr-pbl-side .vr-pbl-head[data-wide="1"] .vr-pbl-head-cam { aspect-ratio: 16 / 10; }
-/* Código integrado ao frame (tema escuro), sem o cartão branco que destoava. */
+/* Class code: delicado e integrado ao frame (tema escuro), com um destaque sutil
+   à esquerda e feedback ao copiar — nada do cartão branco que destoava. */
 .vr-pbl-side .vr-pbl-code-card {
-  flex: 0 0 clamp(148px, 32%, 210px); width: auto; max-width: 46%;
-  justify-content: center; gap: 6px;
-  background: var(--vr-surface-2); color: var(--vr-text);
-  border: 1px solid var(--vr-border); border-radius: 10px; box-shadow: none;
+  flex: 0 0 clamp(150px, 33%, 214px); width: auto; max-width: 46%;
+  justify-content: center; gap: 7px; padding: 12px 14px;
+  background: linear-gradient(158deg, #1b2130, var(--vr-surface));
+  color: var(--vr-text);
+  border: 1px solid var(--vr-border); border-left: 2px solid rgba(99, 102, 241, .65);
+  border-radius: 12px; box-shadow: none;
 }
-.vr-pbl-side .vr-pbl-code-label { color: var(--vr-text-dim); }
-.vr-pbl-side .vr-pbl-code { color: var(--vr-text); }
+.vr-pbl-side .vr-pbl-code-label {
+  color: var(--vr-text-dim); font-size: 10px; letter-spacing: 1.2px;
+  text-transform: uppercase; font-weight: 700; transition: color .15s;
+}
+.vr-pbl-side .vr-pbl-code-label[data-copied] { color: #22c55e; }
+.vr-pbl-side .vr-pbl-code { color: var(--vr-text); font-size: 24px; font-weight: 700; letter-spacing: 3px; transition: color .15s; }
 .vr-pbl-side .vr-pbl-code-ico { color: var(--vr-text-dim); }
 .vr-pbl-side .vr-pbl-code-ico:hover { color: var(--vr-text); }
+/* Toda a linha do código é clicável = copiar (desktop e mobile). */
+.vr-pbl-code-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; margin: 0; padding: 2px 0 0; border: none; background: none;
+  cursor: pointer; text-align: left; color: inherit;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.vr-pbl-code-btn:hover .vr-pbl-code,
+.vr-pbl-code-btn:hover .vr-pbl-code-copyico { color: var(--brand-accent-hover); }
+.vr-pbl-code-btn:active { transform: scale(.985); }
+.vr-pbl-code-copyico { color: var(--vr-text-dim); display: inline-flex; flex: none; opacity: .7; transition: color .15s, opacity .15s; }
+.vr-pbl-code-copyico svg { width: 15px; height: 15px; }
+.vr-pbl-code-btn:hover .vr-pbl-code-copyico { opacity: 1; }
 /* Apresentação flui dentro do frame: sem borda/raio/sombra próprios (o cartão
    externa já arredonda os cantos de baixo via overflow:hidden). */
 .vr-pbl-side .vr-pbl-present-big {
@@ -649,14 +689,27 @@
 .vr-pbl-code-show svg { width: 16px; height: 16px; }
 .vr-pbl-code-show:hover { border-color: var(--brand-accent); }
 
-/* Class-code ampliado (popup) */
+/* Class-code ampliado (popup) — mostrado para TODOS os alunos quando o
+   facilitador amplia. Tema escuro, responsivo e clicável para copiar. */
 .vr-pbl-code-big {
-  position: relative; background: #fff; color: #111; border-radius: 18px;
-  padding: 40px 56px; display: flex; flex-direction: column; align-items: center; gap: 8px;
-  box-shadow: var(--vr-shadow);
+  position: relative; background: var(--vr-surface); color: var(--vr-text);
+  border: 1px solid var(--vr-border); border-radius: 22px;
+  padding: clamp(28px, 6vw, 52px) clamp(28px, 8vw, 72px);
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  box-shadow: var(--vr-shadow); max-width: 92vw;
 }
-.vr-pbl-code-huge { font-size: 72px; font-weight: 800; letter-spacing: 6px; font-family: ui-monospace, monospace; }
-.vr-pbl-big-x { position: absolute; top: 12px; right: 14px; color: #666; }
+.vr-pbl-code-big .vr-pbl-code-label { color: var(--vr-text-dim); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+.vr-pbl-code-huge {
+  font-size: clamp(52px, 13vw, 108px); font-weight: 800; letter-spacing: .08em;
+  font-family: ui-monospace, monospace; color: var(--vr-text); line-height: 1;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  word-break: break-all; text-align: center; transition: color .15s;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.vr-pbl-code-huge:hover, .vr-pbl-code-huge:active { color: var(--brand-accent-hover); }
+.vr-pbl-code-hint { font-size: 13px; color: var(--vr-text-dim); }
+.vr-pbl-big-x { position: absolute; top: 12px; right: 14px; color: var(--vr-text-dim); }
+.vr-pbl-big-x:hover { color: var(--vr-text); }
 
 /* Grade dos alunos (área principal) */
 /* As colunas vêm inline (useFittedCols): dependem de quantos alunos há e do
@@ -671,7 +724,7 @@
    assume ao escolher as colunas. Sem isto a célula estica e achata o vídeo. */
 .vr-pbl-tile {
   position: relative; aspect-ratio: 16 / 10; height: 100%; width: auto; max-width: 100%;
-  min-width: 0; min-height: 0; border-radius: 10px; overflow: hidden;
+  min-width: 0; min-height: 0; border-radius: 12px; overflow: hidden;
   background: var(--vr-surface); border: 3px solid var(--vr-danger);   /* 🔴 fora do pacote */
 }
 .vr-pbl-tile[data-pkg="in"] { border-color: #22c55e; }                  /* 🟢 dentro do pacote */
@@ -685,8 +738,19 @@
 .vr-pbl-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--vr-text-dim); font-size: 13px; padding: 40px 0; }
 @media (max-width: 768px) {
   .vr-stage[data-pbl="1"] { flex-direction: column; }
-  .vr-pbl-code-huge { font-size: 48px; }
-  .vr-pbl-code-big { padding: 28px 32px; }
+  /* Celular: a APRESENTAÇÃO é o herói — ganha a maior parte da tela. Câmera do
+     facilitador + class code viram uma faixa compacta no topo do frame. */
+  .vr-pbl-side .vr-pbl-head { padding: 8px; gap: 8px; }
+  .vr-pbl-side .vr-pbl-head-cam { aspect-ratio: 16 / 9; }
+  .vr-pbl-side .vr-pbl-code-card { flex: 0 0 42%; padding: 8px 10px; gap: 4px; }
+  .vr-pbl-side .vr-pbl-code { font-size: 20px; letter-spacing: 2px; }
+  .vr-pbl-side .vr-pbl-present-big { flex: none; min-height: 54vh; }
+}
+/* Telas bem estreitas (raro): câmera e código empilham em largura total. */
+@media (max-width: 340px) {
+  .vr-pbl-side .vr-pbl-head { flex-direction: column; align-items: stretch; }
+  .vr-pbl-side .vr-pbl-head-cam { width: 100%; aspect-ratio: 16 / 10; }
+  .vr-pbl-side .vr-pbl-code-card { flex-basis: auto; max-width: none; width: 100%; }
 }
 
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
