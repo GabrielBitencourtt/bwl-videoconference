@@ -6,6 +6,7 @@ organização do cliente, quando várias compartilham o mesmo tenant)."""
 import re
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 from ..auth import get_current_user, CurrentUser
 from ..config import settings
 from ..tenancy import resolve_tenant_id
@@ -14,6 +15,12 @@ from ..services.recording_service import s3_client, presigned_url
 router = APIRouter(prefix="/api/backgrounds", tags=["backgrounds"])
 PREFIX = "backgrounds/"
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".ogg", ".ogv", ".mkv", ".avi", ".3gp")
+
+
+class PresignBody(BaseModel):
+    filename: str
+    content_type: str = ""
+    scope: str = ""
 
 
 def _is_video(filename: str, content_type: str) -> bool:
@@ -40,6 +47,21 @@ def _prefix(tenant_id: str, scope: str = "") -> str:
 def _name_from_key(key: str) -> str:
     base = key.rsplit("/", 1)[-1]  # keys look like "<uuidhex>-<original name>"
     return base.split("-", 1)[-1] if "-" in base else base
+
+
+def _safe_name(filename: str) -> str:
+    return (filename or "video.mp4").replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+
+def _video_ctype(safe: str, content_type: str) -> str:
+    # Garante um Content-Type de vídeo (necessário para o <video> tocar o presigned
+    # URL); se veio octet-stream/vazio, infere pela extensão.
+    ctype = content_type or ""
+    if not ctype.startswith("video/"):
+        ext = safe.lower().rsplit(".", 1)[-1] if "." in safe else "mp4"
+        ctype = {"webm": "video/webm", "ogg": "video/ogg", "ogv": "video/ogg",
+                 "mov": "video/quicktime", "mkv": "video/x-matroska"}.get(ext, "video/mp4")
+    return ctype
 
 
 @router.get("")
@@ -94,3 +116,37 @@ async def upload_background(
         ExtraArgs={"ContentType": ctype},
     )
     return {"key": key, "name": safe, "url": presigned_url(key, expires=3600)}
+
+
+@router.post("/presign")
+async def presign_background(
+    body: PresignBody,
+    user: CurrentUser = Depends(get_current_user),
+    tenant_id: str = Depends(resolve_tenant_id),
+):
+    """Gera uma URL pré-assinada de PUT no S3 para upload DIRETO do browser.
+
+    Necessário quando o upload passa por um BFF serverless (ex.: CustomerApp no
+    Amplify/Lambda, limite de 6MB no payload): o browser sobe os bytes direto ao
+    S3 (sem passar pelo Lambda), e só o presign (JSON pequeno) passa pelo BFF.
+    O browser DEVE enviar o PUT com o mesmo Content-Type retornado aqui.
+    """
+    if not user.is_staff:
+        raise HTTPException(403)
+    if not _is_video(body.filename or "", body.content_type or ""):
+        raise HTTPException(400, "Envie um arquivo de vídeo (.mp4, .webm, …)")
+    safe = _safe_name(body.filename)
+    key = f"{_prefix(tenant_id, body.scope)}{uuid.uuid4().hex}-{safe}"
+    ctype = _video_ctype(safe, body.content_type or "")
+    put_url = s3_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": ctype},
+        ExpiresIn=3600,
+    )
+    return {
+        "key": key,
+        "put_url": put_url,
+        "content_type": ctype,
+        "name": safe,
+        "url": presigned_url(key, expires=3600),
+    }
