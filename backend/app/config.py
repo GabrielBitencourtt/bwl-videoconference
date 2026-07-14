@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # Integração OpenPBL (SCORM): progresso dos alunos vem do LRS de interações.
     scorm_lrs_url: str = "https://ltiserver.openpbl.ai"   # GET /interaction-events
     scorm_tenant_slugs: str = "openpbl"    # tenants (slug, csv) que têm a integração ativa
+    # Segredo que autoriza o POST /realtime/.../release no Scorm (push SSE instantâneo
+    # da liberação). Só a webconf o tem → aluno não consegue forjar liberação.
+    # DEVE ser igual ao REALTIME_RELEASE_TOKEN da task def do openpbl.Scorm. Vem do env.
+    scorm_realtime_release_token: str = ""
 
     # Aula OpenPBL ao vivo (class-code, liberação de questionários, encerrar
     # registro, chat do facilitador). A webconf replica as chamadas que o pacote

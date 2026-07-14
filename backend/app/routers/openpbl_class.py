@@ -190,6 +190,7 @@ async def release_gate(room_id: str, body: ClassRelease, user: CurrentUser = Dep
             await c.post(
                 f"{settings.scorm_lrs_url.rstrip('/')}/realtime/class/{ccid}/release",
                 json={"gate": rt_gate, "released": True},
+                headers={"X-Release-Token": settings.scorm_realtime_release_token},
             )
         except Exception:
             pass
