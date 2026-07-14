@@ -861,6 +861,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await goToStep(next);
           break;
         case "question": {
+          // Plenária: apresenta as questões aos alunos AUTOMATICAMENTE (o mesmo clique
+          // do sequenciador inicia a transmissão — é o gesto do usuário exigido pelo
+          // getDisplayMedia). Resiliente: se ainda não está transmitindo, (re)inicia.
+          if (!presenting) await togglePresent();
           // 1ª questão: inicia a gravação. Cada clique avança para a próxima questão no
           // pacote; após 5, passa para a Análise situacional.
           if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
@@ -917,8 +921,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             stepLabel={pblStage === "question"
               ? `Questão para reflexão (${Math.min(qCount + 1, PLENARY_QUESTIONS)}/${PLENARY_QUESTIONS})`
               : curStep.action}
-            onRun={runStep} onPresent={togglePresent}
-            showPresent={pblStage === "plenary" || pblStage === "question"} presenting={presenting}
+            onRun={runStep}
             chartAvailable={chartAvailable} chartHidden={chartHidden}
             onToggleChart={() => setChartHidden((h) => !h)}
             codeChip={classCode ? (
@@ -1224,9 +1227,9 @@ function ClassCodeChip({ code, copied, closed, onClick, onToggleHidden, hiddenFo
   );
 }
 
-function ActivityBar({ stage, head, stepLabel, busy, onRun, onPresent, showPresent, presenting, chartAvailable, chartHidden, onToggleChart, codeChip }: {
+function ActivityBar({ stage, head, stepLabel, busy, onRun, chartAvailable, chartHidden, onToggleChart, codeChip }: {
   stage: OpenPblStage; head: string; stepLabel: string; busy: boolean;
-  onRun: () => void; onPresent: () => void; showPresent: boolean; presenting: boolean;
+  onRun: () => void;
   chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
   codeChip?: ReactNode;
 }) {
@@ -1248,17 +1251,8 @@ function ActivityBar({ stage, head, stepLabel, busy, onRun, onPresent, showPrese
           {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
         </button>
       )}
-      {/* Plenária: transmitir as questões aos alunos (screen-share recortado do pacote). */}
-      {showPresent && (
-        <button
-          className={presenting ? "vr-actbar-present is-on" : "vr-actbar-present"}
-          onClick={onPresent}
-          title={presenting ? "Parar transmissão" : "Apresentar as questões aos alunos"}
-        >
-          {presenting ? "Parar transmissão" : "Apresentar aos alunos"}
-        </button>
-      )}
-      {/* Botão sequencial único: executa a ação da etapa atual e avança. */}
+      {/* Botão sequencial único: executa a ação da etapa atual e avança. Na plenária,
+          este mesmo botão inicia a transmissão das questões aos alunos. */}
       {!done && (
         <button className="vr-actbar-seq" onClick={onRun} disabled={busy} title={stepLabel}>
           <span className="vr-actbar-seq-label">{busy ? "…" : stepLabel}</span>
