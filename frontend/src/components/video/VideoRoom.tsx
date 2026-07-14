@@ -572,7 +572,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
   const [pblRoster, setPblRoster] = useState<any | null>(null);   // status dos alunos (OpenPBL)
-  const [pblStep, setPblStep] = useState<string>("");             // etapa atual (reportada pelo pacote)
+  const [pblStep, setPblStep] = useState<string>("");             // título do slide atual (reportado pelo pacote)
+  const [situacionalReached, setSituacionalReached] = useState(false);  // apresentação chegou na "Análise Situacional" → área vira só gráfico
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -625,11 +626,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
       if (!d || d.source !== "openpbl-package") return;
-      // TEMP (Fase 2 — questões da plenária): logamos TODA mensagem do pacote para
-      // descobrir o payload emitido na seção de plenária. Remover após mapear.
-      // eslint-disable-next-line no-console
-      console.log("[openpbl-package]", d);
-      if (d.type === "step" && typeof d.label === "string") setPblStep(d.label);
+      if (d.type === "step" && typeof d.label === "string") {
+        setPblStep(d.label);
+        // A partir da "Análise Situacional" a área do facilitador vira só o gráfico
+        // (latch: uma vez alcançada, permanece). Detecção por conteúdo do título.
+        if (/situacional/i.test(d.label)) setSituacionalReached(true);
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -995,8 +997,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           <aside className="vr-pbl-side">
             <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
             {isStaff ? (
-              (chartAvailable && !chartHidden) ? (
-                // Análise situacional: gráfico radar (live) da média da turma, ocultável.
+              ((chartAvailable || situacionalReached) && !chartHidden) ? (
+                // A partir da "Análise Situacional" (detectada pelo título do slide) ou
+                // da etapa de Riscos, a área vira SÓ o gráfico radar (live), sem o pacote.
                 <div className="vr-pbl-present-big">
                   <RiskChart roomId={roomId} />
                 </div>
