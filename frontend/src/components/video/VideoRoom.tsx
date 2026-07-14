@@ -993,11 +993,18 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             <div className="vr-brandmeta">
               <span className="vr-clock">{clock}</span>
               <span className="vr-brandmeta-sep">|</span>
-              <ClassCodeChip
-                code={classCode} copied={codeCopied} closed={!registrationOpen}
-                onClick={onCodeChipClick}
-                onToggleHidden={toggleCodeForStudents} hiddenForStudents={codeHiddenForStudents}
-              />
+              {/* Class-code como TEXTO puro (mesma fonte do relógio), sem box e sem o
+                  rótulo "Class code" — segue clicável (copia + amplia) com o ícone ao lado. */}
+              <button type="button" className="vr-code-plain" onClick={onCodeChipClick} title="Clique para copiar e ampliar o código">
+                <span className="vr-clock">{codeCopied ? "Copiado!" : classCode}</span>
+                <span className="vr-code-plain-ico" aria-hidden>{I.copy}</span>
+              </button>
+              <button
+                type="button" className="vr-code-plain-eye" onClick={toggleCodeForStudents}
+                title={codeHiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
+              >
+                {codeHiddenForStudents ? I.eyeOff : I.eye}
+              </button>
             </div>
           ) : (
             <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>

@@ -53,6 +53,21 @@
 .vr-brandmeta { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .vr-clock { font-size: 15px; font-weight: 700; color: var(--vr-text); font-variant-numeric: tabular-nums; letter-spacing: .3px; }
 .vr-brandmeta-sep { color: var(--vr-text-dim); opacity: .55; }
+/* Class-code como texto puro (sem box), clicável, com o ícone de copiar ao lado. */
+.vr-code-plain {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer; color: inherit;
+}
+.vr-code-plain .vr-clock { letter-spacing: 1px; }
+.vr-code-plain-ico { display: inline-flex; color: var(--vr-text-dim); }
+.vr-code-plain-ico svg { width: 15px; height: 15px; }
+.vr-code-plain:hover .vr-code-plain-ico { color: var(--vr-text); }
+.vr-code-plain-eye {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 2px; cursor: pointer; color: var(--vr-text-dim);
+}
+.vr-code-plain-eye:hover { color: var(--vr-text); }
+.vr-code-plain-eye svg { width: 16px; height: 16px; }
 .vr-meta { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--vr-text-dim); }
 .vr-meta .vr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vr-text-dim); }
 .vr-end-btn {
