@@ -577,6 +577,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
   const [pblQuestions, setPblQuestions] = useState<string[]>([]); // TODAS as questões da plenária, pré-carregadas do carousel do pacote (ordem Reflexão 1..N)
   const [plenaryQ, setPlenaryQ] = useState<{ list: string[]; total: number } | null>(null); // questões da plenária reveladas até agora (recebidas pelo aluno via dados, sem screen-share)
+  const [clock, setClock] = useState("");   // horário (HH:MM) mostrado ao lado do class-code no header do facilitador
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -848,6 +849,22 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // disponível; senão cai no padrão. Torna o sequenciador independente do "×5" fixo.
   const plenaryTotal = pblQuestions.length || PLENARY_QUESTIONS;
 
+  // Rótulo do botão sequencial (▶) — na plenária mostra a contagem de questões.
+  const seqLabel = pblStage === "question"
+    ? `Questão para reflexão (${Math.min(qCount + 1, plenaryTotal)}/${plenaryTotal})`
+    : curStep.action;
+
+  // Relógio (HH:MM) no header do facilitador, ao lado do class-code. Atualiza a cada 20s.
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      setClock(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 20000);
+    return () => clearInterval(id);
+  }, []);
+
   // Questões REVELADAS até agora (cascata): da 1ª até a atual (qCount). Acumula a cada
   // clique. Fallback para o corpo do slide (pblQuestion) quando não há lista do pacote.
   const revealedQuestions = pblStage === "question"
@@ -970,28 +987,26 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           {brand?.logo_url
             ? <img className="vr-logo vr-logo-img" src={brand.logo_url} alt="" />
             : <div className="vr-logo">V</div>}
-          <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>
-        </div>
-
-        {/* Barra do facilitador (sequenciador ▶), centrada entre a marca e os controles. */}
-        {pblHost && (
-          <ActivityBar
-            stage={pblStage} head={curStep.head} busy={stageBusy}
-            stepLabel={pblStage === "question"
-              ? `Questão para reflexão (${Math.min(qCount + 1, plenaryTotal)}/${plenaryTotal})`
-              : curStep.action}
-            onRun={runStep}
-            chartAvailable={chartAvailable} chartHidden={chartHidden}
-            onToggleChart={() => setChartHidden((h) => !h)}
-            codeChip={classCode ? (
+          {/* Facilitador na aula OpenPBL: em vez do nome da sala, mostra o horário e o
+              class-code lado a lado (copiar + ocultar p/ alunos). */}
+          {pblHost && classCode ? (
+            <div className="vr-brandmeta">
+              <span className="vr-clock">{clock}</span>
+              <span className="vr-brandmeta-sep">|</span>
               <ClassCodeChip
                 code={classCode} copied={codeCopied} closed={!registrationOpen}
                 onClick={onCodeChipClick}
                 onToggleHidden={toggleCodeForStudents} hiddenForStudents={codeHiddenForStudents}
               />
-            ) : null}
-          />
-        )}
+            </div>
+          ) : (
+            <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>
+          )}
+        </div>
+
+        {/* Centro: SOMENTE a atividade atual (o class-code foi para a esquerda e o
+            botão ▶ para a direita). */}
+        {pblHost && <ActivityBar stage={pblStage} head={curStep.head} />}
 
         {/* Atividade atual do aluno + class code, no próprio header (mesma linha da
             marca e dos controles). O código só aparece enquanto o registro estiver
@@ -1011,6 +1026,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {/* Canto superior direito: controles da chamada (antes eram uma pílula
             centralizada no rodapé), cronômetro/contagem e Encerrar sala. */}
         <div className="vr-header-right">
+          {/* Sequenciador do facilitador (Encerrar Registro / ▶ / etc.) + toggle do
+              gráfico — movidos do centro para a direita, junto dos controles. */}
+          {pblHost && chartAvailable && (
+            <button className="vr-actbar-ghost" onClick={() => setChartHidden((h) => !h)} title="Mostrar/ocultar o gráfico de riscos">
+              {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
+            </button>
+          )}
+          {pblHost && pblStage !== "done" && (
+            <button className="vr-actbar-seq" onClick={runStep} disabled={stageBusy} title={seqLabel}>
+              <span className="vr-actbar-seq-label">{stageBusy ? "…" : seqLabel}</span>
+              {I.playTri}
+            </button>
+          )}
           <ControlBar
             isStaff={isStaff}
             scorm={scorm}
@@ -1324,14 +1352,10 @@ function ClassCodeChip({ code, copied, closed, onClick, onToggleHidden, hiddenFo
   );
 }
 
-function ActivityBar({ stage, head, stepLabel, busy, onRun, chartAvailable, chartHidden, onToggleChart, codeChip }: {
-  stage: OpenPblStage; head: string; stepLabel: string; busy: boolean;
-  onRun: () => void;
-  chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
-  codeChip?: ReactNode;
-}) {
+/** Centro do header do facilitador: SOMENTE o nome da atividade atual + progresso.
+ *  O class-code foi para a esquerda (marca) e o botão ▶ para a direita (controles). */
+function ActivityBar({ stage, head }: { stage: OpenPblStage; head: string }) {
   const step = stepIndex(stage);
-  const done = stage === "done";
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
@@ -1342,20 +1366,6 @@ function ActivityBar({ stage, head, stepLabel, busy, onRun, chartAvailable, char
           </div>
         )}
       </div>
-      {codeChip}
-      {chartAvailable && (
-        <button className="vr-actbar-ghost" onClick={onToggleChart} title="Mostrar/ocultar o gráfico de riscos">
-          {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
-        </button>
-      )}
-      {/* Botão sequencial único: executa a ação da etapa atual e avança. Na plenária,
-          este mesmo botão inicia a transmissão das questões aos alunos. */}
-      {!done && (
-        <button className="vr-actbar-seq" onClick={onRun} disabled={busy} title={stepLabel}>
-          <span className="vr-actbar-seq-label">{busy ? "…" : stepLabel}</span>
-          {I.playTri}
-        </button>
-      )}
     </div>
   );
 }

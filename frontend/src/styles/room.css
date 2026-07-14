@@ -49,6 +49,10 @@
 }
 .vr-logo-img { background: none; object-fit: contain; }
 .vr-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Facilitador OpenPBL: horário + class-code no lugar do nome da sala. */
+.vr-brandmeta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vr-clock { font-size: 15px; font-weight: 700; color: var(--vr-text); font-variant-numeric: tabular-nums; letter-spacing: .3px; }
+.vr-brandmeta-sep { color: var(--vr-text-dim); opacity: .55; }
 .vr-meta { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--vr-text-dim); }
 .vr-meta .vr-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vr-text-dim); }
 .vr-end-btn {
