@@ -163,7 +163,12 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
       branding: (slug: string) =>
         call<{ name: string | null; branding: Record<string, any> }>(`/api/rooms/branding/${slug}`),
       publicInfo: (id: string) =>
-        call<{ title: string; branding: Record<string, any>; tenant_name: string | null }>(`/api/rooms/${id}/public`),
+        call<{
+          title: string; branding: Record<string, any>; tenant_name: string | null;
+          require_email?: boolean; allow_whiteboard_edit?: boolean; scorm?: boolean;
+          lobby_enabled?: boolean; lobby_timer_title?: string | null;
+          lobby_timer_seconds?: number; lobby_bg_video?: string | null; lobby_auto_admit?: boolean;
+        }>(`/api/rooms/${id}/public`),
       create: (body: Partial<Room>) =>
         call<Room>("/api/rooms", { method: "POST", body: JSON.stringify(body) }),
       end: (id: string) => call(`/api/rooms/${id}/end`, { method: "POST" }),

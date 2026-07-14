@@ -61,9 +61,11 @@ async def create_room(
         RETURNING *
         """,
         tenant_id, room_id, body.title, body.description, user.id, max_participants, body.is_public,
-        # Saguão e edição de quadro ficam desligados: os controles saíram do modal e o
-        # corpo da requisição é ignorado, então não há como religá-los pelo cliente.
-        auto_record, False, None, 300, None, False, guest_token,
+        # Saguão (lobby) vem do corpo da requisição — o salas/CustomerApp envia
+        # lobby_enabled + título/tempo/vídeo/auto-admissão. Edição de quadro segue
+        # desligada por padrão (controle removido do modal).
+        auto_record, body.lobby_enabled, body.lobby_timer_title, body.lobby_timer_seconds,
+        body.lobby_bg_video, body.lobby_auto_admit, guest_token,
         body.allow_camera, body.allow_mic, body.allow_screen_share, False,
         body.scheduled_at, body.external_ref, body.require_email, body.openpbl_activity_id,
         body.openpbl_dimensions_id,
@@ -130,18 +132,34 @@ async def room_by_guest_token(token: str):
 
 @router.get("/{room_id}/public")
 async def room_public(room_id: str):
-    """Public, minimal room info (title + license branding) for the iframe embed."""
+    """Public, minimal room info (title + license branding) for the iframe embed.
+    Inclui os campos do saguão (lobby) para o embed poder reter os alunos antes de
+    entrar — o embed do cliente OpenPBL também respeita o lobby."""
     r = await pool().fetchrow(
         """SELECT r.title, r.require_email, r.allow_whiteboard_edit,
+                  r.lobby_enabled, r.lobby_timer_title, r.lobby_timer_seconds,
+                  r.lobby_bg_video, r.lobby_auto_admit,
                   t.branding, t.name AS tenant_name, t.slug AS tenant_slug
            FROM video_rooms r LEFT JOIN tenants t ON t.id = r.tenant_id WHERE r.id=$1""",
         room_id,
     )
     if not r:
         raise HTTPException(404)
+    # lobby_bg_video guarda uma chave S3 — presigna para o <video> tocar.
+    bg = r["lobby_bg_video"]
+    if bg and "://" not in bg:
+        try:
+            bg = presigned_url(bg, expires=6 * 3600)
+        except Exception:
+            bg = None
     return {"title": r["title"], "branding": normalize_branding(r["branding"]),
             "tenant_name": r["tenant_name"], "require_email": r["require_email"],
             "allow_whiteboard_edit": r["allow_whiteboard_edit"],
+            "lobby_enabled": r["lobby_enabled"],
+            "lobby_timer_title": r["lobby_timer_title"],
+            "lobby_timer_seconds": r["lobby_timer_seconds"],
+            "lobby_bg_video": bg,
+            "lobby_auto_admit": r["lobby_auto_admit"],
             "scorm": _is_scorm(r["tenant_slug"])}
 
 

@@ -207,11 +207,49 @@ function EmbedPage() {
     [identity, name, staff],
   );
 
+  // Saguão (lobby): o embed do cliente OpenPBL também respeita o lobby. O host (staff)
+  // entra direto; o aluno aguarda a admissão do host. "pending" enquanto carrega a info.
+  const [info, setInfo] = useState<any | null>(null);
+  const [phase, setPhase] = useState<"pending" | "lobby" | "room" | "denied">("pending");
+  const lobbyIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (roomId) guestSdk.rooms.publicInfo(roomId).then((r) => applyBranding(r.branding)).catch(() => {});
-  }, [roomId]);
+    if (!roomId) return;
+    guestSdk.rooms.publicInfo(roomId).then((r) => {
+      applyBranding(r.branding);
+      setInfo(r);
+      // Host entra direto; aluno vai ao saguão só se o lobby estiver ativo.
+      setPhase(!staff && r.lobby_enabled ? "lobby" : "room");
+    }).catch(() => { setInfo({}); setPhase("room"); });   // sem info → não bloqueia a entrada
+  }, [roomId, staff]);
+
+  // Aluno no saguão: entra na fila e aguarda a decisão do host.
+  useEffect(() => {
+    if (phase !== "lobby" || !roomId) return;
+    embedSdk.lobby.join(roomId, name, "guest").then((res: any) => { lobbyIdRef.current = res.id; }).catch(() => {});
+    return embedSdk.subscribe(roomId, (event, payload) => {
+      if (event === "lobby-decision" && payload.lobby_id === lobbyIdRef.current)
+        setPhase(payload.admit ? "room" : "denied");
+    });
+  }, [phase, roomId, embedSdk, name]);
+
   if (!roomId || !token) {
     return <div className="app-shell app-center"><div className="app-card app-gate"><div className="app-logo app-logo-lg">V</div><p className="app-sub">Parâmetros de embed ausentes (room, token).</p></div></div>;
+  }
+  if (phase === "pending") {
+    return <div className="app-shell app-center"><div className="app-card app-gate"><div className="app-logo app-logo-lg">V</div><p className="app-sub">Carregando…</p></div></div>;
+  }
+  if (phase === "lobby" || phase === "denied") {
+    return (
+      <LobbyWaiting
+        roomTitle={info?.title}
+        timerTitle={info?.lobby_timer_title}
+        timerSeconds={info?.lobby_timer_seconds}
+        bgVideo={info?.lobby_bg_video}
+        denied={phase === "denied"}
+        onTimerEnd={() => { if (info?.lobby_auto_admit) setPhase("room"); }}
+      />
+    );
   }
   return (
     <SDKContext.Provider value={embedSdk}>
