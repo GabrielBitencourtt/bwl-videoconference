@@ -576,6 +576,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [situacionalReached, setSituacionalReached] = useState(false);  // apresentação chegou na "Análise Situacional" → área vira só gráfico
   const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
   const [pblQuestions, setPblQuestions] = useState<string[]>([]); // TODAS as questões da plenária, pré-carregadas do carousel do pacote (ordem Reflexão 1..N)
+  const [plenaryQ, setPlenaryQ] = useState<{ text: string; index: number; total: number } | null>(null); // questão da plenária recebida pelo aluno (via dados, sem screen-share)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -807,6 +808,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       try {
         const m = JSON.parse(new TextDecoder().decode(payload));
         if (m?.source === "webconf" && m?.type === "code-expand") setCodeExpand(!!m.expanded);
+        // Aluno recebe a questão da plenária por dados (sem screen-share). text vazio = limpar.
+        if (m?.source === "webconf" && m?.type === "plenary-question")
+          setPlenaryQ(m.text ? { text: String(m.text), index: m.index || 0, total: m.total || 1 } : null);
       } catch { /* */ }
     };
     room.on(RoomEvent.DataReceived, onData);
@@ -835,6 +839,27 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // Total de questões da plenária: vem do pacote (carousel pré-carregado) quando
   // disponível; senão cai no padrão. Torna o sequenciador independente do "×5" fixo.
   const plenaryTotal = pblQuestions.length || PLENARY_QUESTIONS;
+
+  // Facilitador transmite a questão atual da plenária por DADOS (não por screen-share):
+  // o aluno renderiza o mesmo overlay. Reenvia a cada 3s enquanto na etapa, para quem
+  // entrar depois. Fora da etapa, envia text vazio (limpa no aluno).
+  useEffect(() => {
+    if (!isStaff || !room) return;
+    const inQ = pblStage === "question";
+    const send = () => {
+      try {
+        const text = inQ ? (pblQuestions[qCount] || pblQuestion || "") : "";
+        const data = new TextEncoder().encode(JSON.stringify({
+          source: "webconf", type: "plenary-question", text, index: qCount, total: plenaryTotal,
+        }));
+        room.localParticipant?.publishData(data, { reliable: true });
+      } catch { /* */ }
+    };
+    send();
+    if (!inQ) return;
+    const id = setInterval(send, 3000);
+    return () => clearInterval(id);
+  }, [isStaff, room, pblStage, qCount, pblQuestions, pblQuestion, plenaryTotal]);
 
   // Botão sequencial: executa a AÇÃO da etapa atual (efeitos ✅ da webconf + um "next"
   // best-effort ao pacote) e avança para a próxima. Alguns efeitos INTERNOS do pacote
@@ -884,10 +909,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // Plenária: apresenta as questões aos alunos AUTOMATICAMENTE (o mesmo clique
           // do sequenciador inicia a transmissão — é o gesto do usuário exigido pelo
           // getDisplayMedia). Resiliente: se ainda não está transmitindo, (re)inicia.
-          if (!presenting) await togglePresent();
-          // 1ª questão: inicia a gravação. O overlay troca sozinho pela lista pré-carregada
-          // (qCount) — NÃO avançamos o pacote aqui: as questões são um carousel dentro de
-          // uma lição, e o "next" navegaria entre lições, não entre as questões.
+          // A questão é transmitida por DADOS (overlay no aluno) — NÃO usamos screen-share
+          // aqui (nada de prompt de compartilhar tela). O overlay troca sozinho pela lista
+          // pré-carregada (qCount); não avançamos o pacote (o carousel é dentro da lição).
+          // 1ª questão: inicia a gravação.
           if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
           // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
           const n = qCount + 1;
@@ -1045,8 +1070,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   )}
                 </div>
               )
+            ) : plenaryQ?.text ? (
+              // Aluno na plenária: recebe a questão por dados (sem screen-share) e mostra
+              // o MESMO overlay que o facilitador, na mesma posição.
+              <div className="vr-pbl-present-big">
+                <div className="vr-pbl-question">
+                  <div className="vr-pbl-question-kicker">
+                    Reflexão {Math.min((plenaryQ.index || 0) + 1, plenaryQ.total || 1)}/{plenaryQ.total || 1}
+                  </div>
+                  <div className="vr-pbl-question-text">{plenaryQ.text}</div>
+                </div>
+              </div>
             ) : (
-              // Aluno: apresentação transmitida pelo host (screen-share), mesma posição.
+              // Aluno (demais etapas): apresentação transmitida pelo host, se houver.
               <StudentPresentation />
             )}
           </aside>
