@@ -188,6 +188,6 @@ CREATE TABLE IF NOT EXISTS video_room_openpbl_class (
   released_dimensions BOOLEAN NOT NULL DEFAULT false,
   released BOOLEAN NOT NULL DEFAULT false,
   code_hidden BOOLEAN NOT NULL DEFAULT false,   -- facilitador ocultou o class-code (migration 010)
-  stage TEXT NOT NULL DEFAULT 'presentation',   -- sequenciamento do ▶ (migration 012)
+  stage TEXT NOT NULL DEFAULT 'session_start',   -- sequenciador do ▶ (migrations 012/013)
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

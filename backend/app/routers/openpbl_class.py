@@ -82,7 +82,7 @@ def _row_to_state(row) -> dict:
         "released_dimensions": row["released_dimensions"],
         "released": row["released"],
         "code_hidden": row["code_hidden"],
-        "stage": row["stage"] if "stage" in row else "presentation",
+        "stage": row["stage"] if "stage" in row else "session_start",
     }
 
 
@@ -531,7 +531,11 @@ async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)
     return result
 
 
-_STAGES = ("presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done")
+_STAGES = (
+    "session_start", "registration_open", "amplify_code", "registration_close",
+    "groups", "plenary", "question", "situational",
+    "release_risks", "closing", "release_feedback", "done",
+)
 
 
 class StageSet(BaseModel):

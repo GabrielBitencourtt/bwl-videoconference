@@ -100,7 +100,20 @@ export interface OpenPblClass {
   stage?: OpenPblStage;            // sequenciamento do ▶
 }
 
-export type OpenPblStage = "presentation" | "close" | "open_groups" | "close_groups" | "risks" | "perceptions" | "done";
+/** Etapas do sequenciador do facilitador (espelham "ETAPAS E ATIVIDADES DO ENCONTRO"). */
+export type OpenPblStage =
+  | "session_start"       // Iniciar a sessão
+  | "registration_open"   // Iniciar o registro
+  | "amplify_code"        // Amplia código da sessão
+  | "registration_close"  // Encerrar o registro
+  | "groups"              // Divisão em grupos
+  | "plenary"             // Discussão em plenária
+  | "question"            // Questão para reflexão (×5)
+  | "situational"         // Análise situacional
+  | "release_risks"       // Liberar análise individual de riscos
+  | "closing"             // Encerramento
+  | "release_feedback"    // Liberar feedback de interação
+  | "done";               // Encontro concluído
 
 export interface BreakoutMember { identity: string; display_name: string }
 export interface BreakoutGroup {

@@ -480,8 +480,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!scorm) return;
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
-      if (d && d.source === "openpbl-package" && d.type === "step" && typeof d.label === "string")
-        setPblStep(d.label);
+      if (!d || d.source !== "openpbl-package") return;
+      // TEMP (Fase 2 — questões da plenária): logamos TODA mensagem do pacote para
+      // descobrir o payload emitido na seção de plenária. Remover após mapear.
+      // eslint-disable-next-line no-console
+      console.log("[openpbl-package]", d);
+      if (d.type === "step" && typeof d.label === "string") setPblStep(d.label);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -585,10 +589,85 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       if (event === "openpbl-class") setPblClass(payload);
     });
   }, [scorm, roomId]);
-  const pblStage: OpenPblStage = (pblClass?.stage as OpenPblStage) || "presentation";
-  const chartAvailable = pblStage === "risks" || pblStage === "perceptions" || pblStage === "done";
+  const rawStage = pblClass?.stage as OpenPblStage;
+  const pblStage: OpenPblStage = STEP_IDS.includes(rawStage) ? rawStage : "session_start";
+  const curStep = stepDef(pblStage);
+  // Radar de Riscos: aparece na "Análise situacional" (após liberar a análise de riscos).
+  const chartAvailable = pblStage === "release_risks";
+
+  // Plenária (Discussão em plenária / Questão para reflexão): foco TOTAL nas questões —
+  // a apresentação ocupa tudo e câmera/grade/chat somem. Para o host aplica sempre
+  // (ele tem o iframe); para o aluno só quando há transmissão, evitando um card vazio.
+  const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }], { onlySubscribed: false });
+  const remoteScreenShare = screenShareTracks.some((t) => t.publication && !t.participant.isLocal);
+  const plenaryStage = pblActive && (pblStage === "plenary" || pblStage === "question");
+  const plenaryFocus = plenaryStage && (isStaff || remoteScreenShare);
   const [chartHidden, setChartHidden] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
+  const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
+
+  // ---- Class code (ao lado da etapa atual) + popup grande transmitido p/ a sala ----
+  // Facilitador vê sempre; o aluno só enquanto o registro está aberto (e não oculto).
+  // Clicar no chip copia e abre o popup; o facilitador transmite a abertura p/ todos
+  // (LiveKit data). Para o aluno o popup ainda abre sozinho ao entrar no registro.
+  const classCode: string | null = pblRoster?.code ?? null;
+  const codeHiddenForStudents = !!pblRoster?.code_hidden;
+  const registrationOpen = pblClass?.checking_open !== false;
+  const studentCanSeeCode = registrationOpen && !codeHiddenForStudents;
+  const [codeExpand, setCodeExpand] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const broadcastCodeExpand = (open: boolean) => {
+    try {
+      const data = new TextEncoder().encode(JSON.stringify({ source: "webconf", type: "code-expand", expanded: open }));
+      room?.localParticipant?.publishData(data, { reliable: true });
+    } catch { /* */ }
+  };
+  const copyClassCode = async () => {
+    if (!classCode) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(classCode);
+      else throw new Error("no-clipboard");
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = classCode; ta.readOnly = true;
+      ta.style.position = "fixed"; ta.style.top = "-9999px"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      ta.setSelectionRange(0, ta.value.length);   // iOS precisa do range explícito
+      try { document.execCommand("copy"); } catch { /* */ }
+      document.body.removeChild(ta);
+    }
+    setCodeCopied(true); setTimeout(() => setCodeCopied(false), 1400);
+  };
+  // Clique no chip: copia + abre o popup. O facilitador transmite p/ todos presentes.
+  const onCodeChipClick = () => { copyClassCode(); setCodeExpand(true); if (isStaff) broadcastCodeExpand(true); };
+  const closeCodePopup = () => { setCodeExpand(false); if (isStaff) broadcastCodeExpand(false); };
+  // Facilitador oculta/reexibe o code apenas para os ALUNOS (ele continua vendo).
+  const toggleCodeForStudents = () => sdk.openpbl.setCodeVisible(roomId, !codeHiddenForStudents).catch(() => {});
+
+  // Todos na sala recebem a abertura/fechamento do popup transmitida pelo facilitador.
+  useEffect(() => {
+    if (!room) return;
+    const onData = (payload: Uint8Array) => {
+      try {
+        const m = JSON.parse(new TextDecoder().decode(payload));
+        if (m?.source === "webconf" && m?.type === "code-expand") setCodeExpand(!!m.expanded);
+      } catch { /* */ }
+    };
+    room.on(RoomEvent.DataReceived, onData);
+    return () => { room.off(RoomEvent.DataReceived, onData); };
+  }, [room]);
+
+  // Aluno: o popup abre automaticamente ao chegar no registro (uma vez por abertura).
+  const autoCodePopupRef = useRef(false);
+  useEffect(() => {
+    if (isStaff || !pblActive || !classCode) return;
+    if (studentCanSeeCode) {
+      if (!autoCodePopupRef.current) { autoCodePopupRef.current = true; setCodeExpand(true); }
+    } else {
+      autoCodePopupRef.current = false;   // registro fechou → reabre numa nova abertura
+    }
+  }, [isStaff, pblActive, classCode, studentCanSeeCode]);
 
   // Estado global dos grupos (breakout aberto?) — p/ as etapas Abrir/Encerrar grupos.
   const [breakoutOpen, setBreakoutOpen] = useState(false);
@@ -602,31 +681,95 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     });
   }, [scorm, roomId]);
 
-  const STAGE_ORDER: OpenPblStage[] = ["presentation", "close", "open_groups", "close_groups", "risks", "perceptions", "done"];
-  // Plenária: os alunos voltam dos grupos automaticamente e a tela passa a gravar.
-  const startPlenaria = async () => {
-    if (breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});           // alunos voltam à sala principal
-    if (!recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }  // grava a tela
+  // Reset do contador de questões ao sair da etapa de plenária.
+  useEffect(() => { if (pblStage !== "question") setQCount(0); }, [pblStage]);
+
+  const goToStep = async (id: OpenPblStage) => {
+    try { setPblClass(await sdk.openpbl.setStage(roomId, id)); } catch { /* */ }
   };
-  const advanceStage = async () => {
-    const i = STAGE_ORDER.indexOf(pblStage);
-    const next = STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)];
-    if (next === pblStage) return;
-    if (pblStage === "presentation" && presenting) await togglePresent();     // fecha a transmissão ao sair da apresentação
-    if (next === "close_groups") await startPlenaria();                       // ao entrar na plenária: alunos voltam + grava automático
-    try { setPblClass(await sdk.openpbl.setStage(roomId, next)); } catch { /* */ }
-  };
-  const doStageAction = async () => {
+
+  // Botão sequencial: executa a AÇÃO da etapa atual (efeitos ✅ da webconf + um "next"
+  // best-effort ao pacote) e avança para a próxima. Alguns efeitos INTERNOS do pacote
+  // (endereçar pergunta verde→vermelho, converter quadros p/ verde, desconectar ao fim
+  // do quiz) NÃO têm endpoint neste repo — ficam marcados como TODO até existir a API.
+  const runStep = async () => {
     setStageBusy(true);
+    const id = pblStage;
+    const idx = stepIndex(id);
+    const next = STEP_IDS[Math.min(idx + 1, STEP_IDS.length - 1)];
     try {
-      if (pblStage === "presentation") await togglePresent();
-      else if (pblStage === "close") { await sdk.openpbl.closeRegistration(roomId); await sdk.openpbl.syncGroups(roomId).catch(() => {}); }
-      else if (pblStage === "open_groups") await sdk.breakouts.open(roomId);    // sem duração = sem timer
-      else if (pblStage === "close_groups") await startPlenaria();             // trazer alunos de volta + gravar a plenária
-      else if (pblStage === "risks") await sdk.openpbl.release(roomId, "risks");
-      else if (pblStage === "perceptions") await sdk.openpbl.release(roomId, "perceptions");
-    } catch { /* silencioso: o painel OpenPBL mostra erros detalhados */ }
-    finally { setStageBusy(false); }
+      switch (id) {
+        case "session_start":
+          if (!pblClass?.active && pblRoster?.activity_id) await sdk.openpbl.startClass(roomId, pblRoster.activity_id).catch(() => {});
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "registration_open":
+          // Registro abre por padrão ao iniciar a aula; aqui só avança a tela do pacote.
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "amplify_code":
+          // Pop-up do código AMPLIADO e copiável, transmitido para todos os presentes.
+          setCodeExpand(true); if (isStaff) broadcastCodeExpand(true);
+          await goToStep(next);
+          break;
+        case "registration_close":
+          await sdk.openpbl.closeRegistration(roomId).catch(() => {});
+          await sdk.openpbl.syncGroups(roomId).catch(() => {});
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "groups":
+          // Divide os grupos (API OpenPBL) e abre as salas com contagem de 10 min.
+          await sdk.openpbl.syncGroups(roomId).catch(() => {});
+          await sdk.breakouts.open(roomId, 600).catch(() => {});
+          await goToStep(next);
+          break;
+        case "plenary":
+          // Todos voltam à sala principal para a discussão em plenária.
+          if (breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "question": {
+          // 1ª questão: inicia a gravação. Cada clique avança para a próxima questão no
+          // pacote; após 5, passa para a Análise situacional.
+          if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
+          presentationPost("next");
+          // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
+          const n = qCount + 1;
+          setQCount(n);
+          if (n >= PLENARY_QUESTIONS) {
+            if (presenting) await togglePresent().catch(() => {});
+            await goToStep("situational");
+          }
+          break;
+        }
+        case "situational":
+          // TODO(pacote): "converte todos os quadros dos participantes para verde" — sem endpoint.
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "release_risks":
+          await sdk.openpbl.release(roomId, "risks").catch(() => {});
+          await goToStep(next);
+          break;
+        case "closing":
+          if (recording) { setRecording(false); await sdk.recording.stop(roomId).catch(() => setRecording(true)); }
+          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "release_feedback":
+          await sdk.openpbl.release(roomId, "perceptions").catch(() => {});
+          // TODO(pacote): "participantes desconectados ao encerrar o quiz" — possível via
+          // moderação (force-kick), mas o gatilho (fim do quiz) é do pacote.
+          await goToStep(next);
+          break;
+        case "done":
+          break;
+      }
+    } finally { setStageBusy(false); }
   };
 
   return (
@@ -642,11 +785,21 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {/* Barra do facilitador (sequenciador ▶), centrada entre a marca e os controles. */}
         {pblHost && (
           <ActivityBar
-            stage={pblStage} cls={pblClass} presenting={presenting} busy={stageBusy} breakoutOpen={breakoutOpen}
-            recording={recording}
-            onAction={doStageAction} onAdvance={advanceStage}
+            stage={pblStage} head={curStep.head} busy={stageBusy}
+            stepLabel={pblStage === "question"
+              ? `Questão para reflexão (${Math.min(qCount + 1, PLENARY_QUESTIONS)}/${PLENARY_QUESTIONS})`
+              : curStep.action}
+            onRun={runStep} onPresent={togglePresent}
+            showPresent={pblStage === "plenary" || pblStage === "question"} presenting={presenting}
             chartAvailable={chartAvailable} chartHidden={chartHidden}
             onToggleChart={() => setChartHidden((h) => !h)}
+            codeChip={classCode ? (
+              <ClassCodeChip
+                code={classCode} copied={codeCopied} closed={!registrationOpen}
+                onClick={onCodeChipClick}
+                onToggleHidden={toggleCodeForStudents} hiddenForStudents={codeHiddenForStudents}
+              />
+            ) : null}
           />
         )}
 
@@ -687,25 +840,42 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
         )}
 
+      {/* Faixa da atividade atual para o aluno: nome da etapa (sincronizado com o
+          sequenciador do facilitador) + class code, este só enquanto o registro
+          estiver aberto. Clicar no code copia e abre o popup. */}
+      {scorm && pblActive && !isStaff && (
+        <div className="vr-student-activity">
+          <div className="vr-student-activity-info">
+            <span className="vr-student-activity-cap">Atividade atual</span>
+            <span className="vr-student-activity-name">{curStep.head}</span>
+          </div>
+          {classCode && studentCanSeeCode && (
+            <ClassCodeChip code={classCode} copied={codeCopied} closed={false} onClick={onCodeChipClick} />
+          )}
+        </div>
+      )}
+
       {/* Coluna própria à esquerda (câmera do facilitador + class code no topo,
           apresentação abaixo) — IGUAL para host e aluno. O aluno recebe a
           apresentação transmitida (screen-share) na MESMA posição do iframe do host. */}
-      <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined}>
+      <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined} data-focus={plenaryFocus ? "plenary" : undefined}>
         {pblActive && (
           <aside className="vr-pbl-side">
-            <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />
+            <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
             {isStaff ? (
-              pblStage === "presentation" ? (
-                // Host, etapa 1: apresentação embutida (fecha ao avançar de etapa).
-                <div className="vr-pbl-present-big" ref={presentElRef}>
-                  <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
-                </div>
-              ) : (chartAvailable && !chartHidden) ? (
-                // Host, Riscos em diante: gráfico radar (live), ocultável.
+              (chartAvailable && !chartHidden) ? (
+                // Análise situacional: gráfico radar (live) da média da turma, ocultável.
                 <div className="vr-pbl-present-big">
                   <RiskChart roomId={roomId} />
                 </div>
-              ) : null
+              ) : (
+                // O pacote fica embutido durante toda a sessão (mostra cada tela: boas-vindas,
+                // aquecimento, plenária, questões, feedback). presentElRef = alvo do recorte
+                // para transmitir aos alunos (Fase 1 da plenária).
+                <div className="vr-pbl-present-big" ref={presentElRef}>
+                  <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+                </div>
+              )
             ) : (
               // Aluno: apresentação transmitida pelo host (screen-share), mesma posição.
               <StudentPresentation />
@@ -723,9 +893,27 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               </Suspense>
             </div>
           )}
+          {/* Chat/Participantes: overlay glass DENTRO da área dos alunos — o leve
+              desfoque fica só sobre os alunos; a apresentação e o facilitador (coluna
+              à esquerda / topo) permanecem 100% visíveis. */}
+          {(panel === "chat" || panel === "people") && (
+            <aside className="vr-panel vr-panel-overlay">
+              {scorm && !pblActive && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />}
+              <div className="vr-tabs">
+                <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
+                <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
+                  Participantes ({participants.length})
+                </button>
+              </div>
+              <div className="vr-panel-body">
+                {panel === "chat" && <RoomChat roomId={roomId} senderName={senderName} channel={breakout.active?.groupId} channelLabel={breakout.active?.groupName} />}
+                {panel === "people" && <PeoplePanel roomId={roomId} isStaff={isStaff} inviteUrl={inviteUrl} />}
+              </div>
+            </aside>
+          )}
         </div>
-        {panel && (panel === "breakout" || panel === "scorm") && isStaff ? (
-          // Seção dedicada: SUBSTITUI o painel (sem abas de chat/participantes).
+        {panel && (panel === "breakout" || panel === "scorm") && isStaff && (
+          // Seção dedicada (host): SUBSTITUI o painel, in-flow (empurra a grade).
           <aside className="vr-panel">
             <div className="vr-panel-head">
               <span className="vr-panel-title">{panel === "breakout" ? "Grupos" : "OpenPBL"}</span>
@@ -742,20 +930,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 </Suspense>
               )}
               {panel === "scorm" && scorm && <ScormPanel roomId={roomId} />}
-            </div>
-          </aside>
-        ) : (panel === "chat" || panel === "people") && (
-          <aside className="vr-panel">
-            {scorm && !pblActive && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} roomId={roomId} />}
-            <div className="vr-tabs">
-              <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
-              <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
-                Participantes ({participants.length})
-              </button>
-            </div>
-            <div className="vr-panel-body">
-              {panel === "chat" && <RoomChat roomId={roomId} senderName={senderName} channel={breakout.active?.groupId} channelLabel={breakout.active?.groupName} />}
-              {panel === "people" && <PeoplePanel roomId={roomId} isStaff={isStaff} inviteUrl={inviteUrl} />}
             </div>
           </aside>
         )}
@@ -784,6 +958,20 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               <button className="vr-modal-btn" onClick={() => setConfirmEnd(false)}>Cancelar</button>
               <button className="vr-modal-btn vr-modal-btn-danger" onClick={doEndRoom}>Encerrar sala</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup grande do class code — abre ao clicar no chip (facilitador transmite
+          p/ todos) e, para o aluno, automaticamente ao entrar no registro. O aluno
+          não vê o popup se o facilitador tiver ocultado o código para a turma. */}
+      {pblActive && classCode && codeExpand && (isStaff || !codeHiddenForStudents) && (
+        <div className="vr-sheet-backdrop" onClick={closeCodePopup}>
+          <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>
+            <button className="vr-sheet-close vr-pbl-big-x" onClick={closeCodePopup} aria-label="Fechar">✕</button>
+            <span className="vr-pbl-code-label">Class code</span>
+            <button type="button" className="vr-pbl-code-huge" onClick={copyClassCode} title="Clique para copiar">{classCode}</button>
+            <span className="vr-pbl-code-hint">{codeCopied ? "Copiado! ✓" : "toque para copiar"}</span>
           </div>
         </div>
       )}
@@ -854,78 +1042,95 @@ function PresentationFrame({ activityId, email, name }: { activityId: string; em
   );
 }
 
-/** Sequenciador do facilitador (barra "Etapa atual ▶"): cada etapa troca a ação
- *  e o conteúdo da área da esquerda. O ▶ avança para a próxima etapa. */
-const STAGE_LABELS: Record<OpenPblStage, string> = {
-  presentation: "Apresentação",
-  close: "Encerrar registro",
-  open_groups: "Dividir grupos",
-  close_groups: "Plenária",
-  risks: "Questionário de Riscos",
-  perceptions: "Questionário de Percepções",
-  done: "Aula concluída",
-};
+/** Sequenciador do facilitador — "ETAPAS E ATIVIDADES DO ENCONTRO". Um único botão
+ *  sequencial percorre a lista: cada clique executa a AÇÃO da etapa (e manda um
+ *  "next" ao pacote, best-effort) e avança para a próxima. `head` = título da fase
+ *  (a "atividade atual" exibida). */
+interface StepDef { id: OpenPblStage; action: string; head: string; }
+const STEPS: StepDef[] = [
+  { id: "session_start",      action: "Iniciar a sessão",                     head: "Pré-atividades" },
+  { id: "registration_open",  action: "Iniciar o registro",                   head: "Registro de Presença" },
+  { id: "amplify_code",       action: "Ampliar código da sessão",             head: "Registro de Presença" },
+  { id: "registration_close", action: "Encerrar o registro",                  head: "Registro de Presença" },
+  { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
+  { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
+  { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
+  { id: "situational",        action: "Análise situacional",                  head: "Plenária" },
+  { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
+  { id: "closing",            action: "Encerramento",                         head: "Análise situacional" },
+  { id: "release_feedback",   action: "Liberar feedback de interação",        head: "Feedback e encerramento" },
+  { id: "done",               action: "Encontro concluído",                   head: "Encontro concluído" },
+];
+const STEP_IDS = STEPS.map((s) => s.id);
+const stepIndex = (id: OpenPblStage) => STEP_IDS.indexOf(id);
+const stepDef = (id: OpenPblStage): StepDef => STEPS.find((s) => s.id === id) ?? STEPS[0];
+const PLENARY_QUESTIONS = 5;   // "Questão para reflexão" repete 5× antes de "Análise situacional"
 
-/** Ordem visível do sequenciador (sem "done") — base do contador "Etapa X de N". */
-const STAGE_FLOW: OpenPblStage[] = ["presentation", "close", "open_groups", "close_groups", "risks", "perceptions"];
-
-function stageAction(stage: OpenPblStage, cls: any, presenting: boolean, breakoutOpen: boolean, recording: boolean): { label: string; done: boolean; danger?: boolean } | null {
-  switch (stage) {
-    case "presentation":
-      return { label: presenting ? "Parar transmissão" : "Apresentar aos alunos", done: false, danger: presenting };
-    case "close":
-      return { label: cls?.checking_open === false ? "✓ Registro encerrado" : "Encerrar registro", done: cls?.checking_open === false };
-    case "open_groups":
-      return { label: breakoutOpen ? "✓ Grupos divididos" : "Dividir grupos", done: breakoutOpen };
-    case "close_groups": {
-      // Plenária: alunos de volta à sala principal + gravação de tela em andamento.
-      const ready = !breakoutOpen && recording;
-      return { label: ready ? "● Gravando plenária" : "Iniciar plenária", done: ready };
-    }
-    case "risks":
-      return { label: cls?.released_dimensions ? "✓ Riscos liberado" : "Liberar questionário de Riscos", done: !!cls?.released_dimensions };
-    case "perceptions":
-      return { label: cls?.released ? "✓ Percepções liberado" : "Liberar questionário de Percepções", done: !!cls?.released };
-    default:
-      return null;
-  }
+/** Chip do class-code que vive ao lado da etapa atual (barra do facilitador e faixa
+ *  do aluno). Clicar copia o código e abre o popup grande. O facilitador ainda pode
+ *  ocultar/reexibir o código para os alunos (ícone de olho). */
+function ClassCodeChip({ code, copied, closed, onClick, onToggleHidden, hiddenForStudents }: {
+  code: string; copied: boolean; closed: boolean;
+  onClick: () => void; onToggleHidden?: () => void; hiddenForStudents?: boolean;
+}) {
+  return (
+    <div className="vr-code-chip-wrap">
+      <button type="button" className="vr-code-chip" onClick={onClick} title="Clique para copiar e ampliar o código">
+        <span className="vr-code-chip-cap" data-copied={copied || undefined}>{copied ? "Copiado!" : "Class code"}</span>
+        <span className="vr-code-chip-val">{code}</span>
+        <span className="vr-code-chip-ico" aria-hidden>{I.copy}</span>
+      </button>
+      {onToggleHidden && (
+        <button
+          type="button" className="vr-code-chip-eye" onClick={onToggleHidden}
+          title={hiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
+        >
+          {hiddenForStudents ? I.eyeOff : I.eye}
+        </button>
+      )}
+      {closed && <span className="vr-code-chip-closed">registro encerrado</span>}
+    </div>
+  );
 }
 
-function ActivityBar({ stage, cls, presenting, busy, breakoutOpen, recording, onAction, onAdvance, chartAvailable, chartHidden, onToggleChart }: {
-  stage: OpenPblStage; cls: any; presenting: boolean; busy: boolean; breakoutOpen: boolean; recording: boolean;
-  onAction: () => void; onAdvance: () => void;
+function ActivityBar({ stage, head, stepLabel, busy, onRun, onPresent, showPresent, presenting, chartAvailable, chartHidden, onToggleChart, codeChip }: {
+  stage: OpenPblStage; head: string; stepLabel: string; busy: boolean;
+  onRun: () => void; onPresent: () => void; showPresent: boolean; presenting: boolean;
   chartAvailable: boolean; chartHidden: boolean; onToggleChart: () => void;
+  codeChip?: ReactNode;
 }) {
-  const act = stageAction(stage, cls, presenting, breakoutOpen, recording);
-  const step = STAGE_FLOW.indexOf(stage);
+  const step = stepIndex(stage);
+  const done = stage === "done";
   return (
     <div className="vr-actbar">
       <div className="vr-actbar-info">
-        <span className="vr-actbar-cap">{step >= 0 ? `Etapa ${step + 1} de ${STAGE_FLOW.length}` : "Etapa atual"}</span>
-        <span className="vr-actbar-name">{STAGE_LABELS[stage]}</span>
+        <span className="vr-actbar-name">{head}</span>
         {step >= 0 && (
           <div className="vr-actbar-prog" aria-hidden>
-            <i style={{ width: `${((step + 1) / STAGE_FLOW.length) * 100}%` }} />
+            <i style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
           </div>
         )}
       </div>
+      {codeChip}
       {chartAvailable && (
         <button className="vr-actbar-ghost" onClick={onToggleChart} title="Mostrar/ocultar o gráfico de riscos">
           {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
         </button>
       )}
-      {act && (
+      {/* Plenária: transmitir as questões aos alunos (screen-share recortado do pacote). */}
+      {showPresent && (
         <button
-          className={act.danger ? "vr-actbar-present is-on" : "vr-actbar-present"}
-          onClick={onAction}
-          disabled={act.done || busy}
-          title={act.label}
+          className={presenting ? "vr-actbar-present is-on" : "vr-actbar-present"}
+          onClick={onPresent}
+          title={presenting ? "Parar transmissão" : "Apresentar as questões aos alunos"}
         >
-          {busy ? "…" : act.label}
+          {presenting ? "Parar transmissão" : "Apresentar aos alunos"}
         </button>
       )}
-      {stage !== "done" && (
-        <button className="vr-actbar-next" onClick={onAdvance} title="Avançar para a próxima etapa">
+      {/* Botão sequencial único: executa a ação da etapa atual e avança. */}
+      {!done && (
+        <button className="vr-actbar-seq" onClick={onRun} disabled={busy} title={stepLabel}>
+          <span className="vr-actbar-seq-label">{busy ? "…" : stepLabel}</span>
           {I.playTri}
         </button>
       )}
@@ -1189,13 +1394,9 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
   return grid;
 }
 
-/** Header do painel (OpenPBL): câmera do facilitador destacada + card do class-code.
- *  O facilitador pode ocultar/reexibir o código (sincronizado p/ todos). */
-function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; roomId: string }) {
-  const sdk = useSDK();
-  const room = useRoomContext();
-  const [expand, setExpand] = useState(false);
-  const [copied, setCopied] = useState(false);
+/** Header do painel (OpenPBL): câmera do facilitador destacada. O class-code saiu
+ *  daqui e passou a viver ao lado da etapa atual (ver ClassCodeChip / popup). */
+function PblPanelHeader({ roster, localIsStaff, localIdentity }: { roster: any | null; localIsStaff: boolean; localIdentity?: string }) {
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
 
   const byId: Record<string, any> = {};
@@ -1203,95 +1404,11 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, roomId }: { roste
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
   const hostTrack = tracks.find((t) => isHostTile(t.participant.identity));
-  const code: string | null = roster?.code ?? null;
-  const hidden = !!roster?.code_hidden;
-  const isHost = localIsStaff;
 
-  const toggle = () => sdk.openpbl.setCodeVisible(roomId, !hidden).catch(() => {});
-  const showCard = !!code && !hidden;
-
-  // Copiar o código ao clicar — funciona no desktop e no mobile: usa a Clipboard
-  // API quando disponível (contexto seguro) e cai no fallback do <textarea> +
-  // execCommand quando não (iframe do embed, http, WebViews antigas de celular).
-  const copyCode = async () => {
-    if (!code) return;
-    try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(code);
-      else throw new Error("no-clipboard");
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = code; ta.readOnly = true;
-      ta.style.position = "fixed"; ta.style.top = "-9999px"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.focus(); ta.select();
-      ta.setSelectionRange(0, ta.value.length);   // iOS precisa do range explícito
-      try { document.execCommand("copy"); } catch { /* */ }
-      document.body.removeChild(ta);
-    }
-    setCopied(true); setTimeout(() => setCopied(false), 1400);
-  };
-
-  // "Ampliar para todos": o facilitador transmite (via LiveKit data) o sinal e a
-  // sala inteira abre/fecha o código gigante junto. O aluno pode fechar o dele.
-  const broadcastExpand = (open: boolean) => {
-    try {
-      const data = new TextEncoder().encode(JSON.stringify({ source: "webconf", type: "code-expand", expanded: open }));
-      room?.localParticipant?.publishData(data, { reliable: true });
-    } catch { /* */ }
-  };
-  const openExpand = () => { setExpand(true); if (isHost) broadcastExpand(true); };
-  const closeExpand = () => { setExpand(false); if (isHost) broadcastExpand(false); };
-
-  useEffect(() => {
-    if (!room) return;
-    const onData = (payload: Uint8Array) => {
-      try {
-        const m = JSON.parse(new TextDecoder().decode(payload));
-        if (m?.source === "webconf" && m?.type === "code-expand") setExpand(!!m.expanded);
-      } catch { /* */ }
-    };
-    room.on(RoomEvent.DataReceived, onData);
-    return () => { room.off(RoomEvent.DataReceived, onData); };
-  }, [room]);
-
-  if (!hostTrack && !code) return null;
+  if (!hostTrack) return null;
   return (
-    <div className="vr-pbl-head" data-wide={showCard ? undefined : "1"}>
-      {hostTrack && <div className="vr-pbl-head-cam"><ParticipantTile trackRef={hostTrack} /></div>}
-
-      {showCard && (
-        <div className="vr-pbl-code-card">
-          <div className="vr-pbl-code-top">
-            <span className="vr-pbl-code-label" data-copied={copied || undefined}>{copied ? "Copiado!" : "Class code"}</span>
-            <div className="vr-pbl-code-tools">
-              {isHost && <button className="vr-pbl-code-ico" onClick={toggle} title="Ocultar o código para todos">{I.eyeOff}</button>}
-              <button className="vr-pbl-code-ico" onClick={openExpand} title="Ampliar para todos os alunos">{I.expand}</button>
-            </div>
-          </div>
-          <button type="button" className="vr-pbl-code-btn" onClick={copyCode} title="Clique para copiar o código">
-            <span className="vr-pbl-code">{code}</span>
-            <span className="vr-pbl-code-copyico" aria-hidden>{I.copy}</span>
-          </button>
-          {roster?.checking_open === false && <span className="vr-pbl-code-closed">registro encerrado</span>}
-        </div>
-      )}
-
-      {/* Oculto: só o facilitador vê o botão de reexibir para todos */}
-      {code && hidden && isHost && (
-        <button className="vr-pbl-code-show" onClick={toggle} title="Reexibir o código para todos">
-          {I.eye}<span>Mostrar class code</span>
-        </button>
-      )}
-
-      {expand && code && (
-        <div className="vr-sheet-backdrop" onClick={closeExpand}>
-          <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>
-            <button className="vr-sheet-close vr-pbl-big-x" onClick={closeExpand} aria-label="Fechar">✕</button>
-            <span className="vr-pbl-code-label">Class code</span>
-            <button type="button" className="vr-pbl-code-huge" onClick={copyCode} title="Clique para copiar">{code}</button>
-            <span className="vr-pbl-code-hint">{copied ? "Copiado! ✓" : "toque para copiar"}</span>
-          </div>
-        </div>
-      )}
+    <div className="vr-pbl-head" data-wide="1">
+      <div className="vr-pbl-head-cam"><ParticipantTile trackRef={hostTrack} /></div>
     </div>
   );
 }

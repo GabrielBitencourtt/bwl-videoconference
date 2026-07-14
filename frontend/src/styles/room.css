@@ -134,6 +134,18 @@
   display: flex; flex-direction: column;
   overflow: hidden;
 }
+/* Chat/Participantes como OVERLAY flutuante DENTRO da área dos alunos (.vr-grid-wrap,
+   que é position:relative): não empurra a grade ao abrir/fechar e o desfoque leve
+   incide SÓ sobre os alunos — a apresentação/facilitador ficam 100% visíveis. */
+.vr-panel-overlay {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 20;
+  /* width (340px) vem de .vr-panel; ancorado à direita da área dos alunos. */
+  background: var(--vr-surface);                                   /* fallback opaco */
+  background: color-mix(in srgb, var(--vr-surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, .30);
+}
 .vr-tabs { display: flex; border-bottom: 1px solid var(--vr-border); }
 .vr-tab {
   flex: 1; padding: 12px; background: none; border: none; cursor: pointer;
@@ -336,6 +348,8 @@
   .vr-actbar-name { font-size: 17px; }
   .vr-actbar-present { flex: 1 1 auto; min-width: 0; }
   .vr-actbar-next { flex: none; }
+  .vr-actbar-seq { flex: 1 1 auto; min-width: 0; justify-content: center; }
+  .vr-actbar-seq-label { max-width: none; }
   .vr-title { font-size: 14px; }
   .vr-meta { gap: 8px; font-size: 12px; }
   .vr-meta .vr-count-label { display: none; }
@@ -348,6 +362,8 @@
     position: absolute; inset: 0; width: auto; z-index: 30;
     border-radius: 12px;
   }
+  /* Chat overlay no celular: tela cheia (fixed) mesmo vivendo dentro de .vr-grid-wrap. */
+  .vr-panel-overlay { position: fixed; inset: 0; width: auto; z-index: 40; border-radius: 0; }
 
   /* Controles cabem na tela (encolhem e quebram linha se preciso) */
   .vr-controls { padding: 8px 6px; }
@@ -599,10 +615,11 @@
    apresentação ocupando todo o resto. Libera a direita para o chat. */
 /* Facilitador + apresentação à esquerda; o resto é dos alunos (o chat, quando
    aberto, divide espaço com eles). Abaixo de 50% para os cards crescerem. */
-/* Frame ÚNICO e homogêneo: câmera do facilitador + class code lado a lado no
-   topo, apresentação preenchendo o resto — tudo dentro de um mesmo cartão, com
-   uma só borda/sombra e divisórias sutis (nada de caixas soltas destoantes). */
+/* Frame ÚNICO e homogêneo: a APRESENTAÇÃO ocupa o cartão inteiro e a câmera do
+   facilitador flutua por cima como PiP no canto — uma só borda/sombra, sem caixas
+   soltas. (O class code saiu daqui e agora vive ao lado da etapa atual.) */
 .vr-pbl-side {
+  position: relative;   /* âncora do PiP da câmera do facilitador */
   width: 50%; flex: none; display: flex; flex-direction: column; gap: 0; min-height: 0;
   background: var(--vr-surface);
   border: 1px solid var(--vr-border);
@@ -610,54 +627,31 @@
   box-shadow: var(--vr-shadow);
   overflow: hidden;
 }
-/* Topo do frame: câmera (esq) + código (dir), mesma altura, divisória fina. */
+/* Câmera do facilitador: PiP flutuante no canto superior esquerdo, POR CIMA da
+   apresentação (que agora ocupa o frame inteiro). Sem espaço vazio e sem cortar o
+   rosto. `pointer-events: none` para não bloquear cliques na apresentação. */
 .vr-pbl-side .vr-pbl-head {
-  flex: none; flex-direction: row; align-items: stretch;
-  gap: 10px; padding: 12px; border-bottom: 1px solid var(--vr-border); background: transparent;
+  position: absolute; top: 12px; left: 12px; z-index: 5; pointer-events: none;
+  flex: none; width: clamp(160px, 26%, 240px); padding: 0; gap: 0;
+  border-bottom: none; background: transparent;
 }
-/* Câmera do facilitador compacta (16/9) para a APRESENTAÇÃO abaixo dominar. */
 .vr-pbl-side .vr-pbl-head-cam {
-  flex: 1 1 auto; width: auto; min-width: 0; aspect-ratio: 16 / 9; max-height: 30vh;
-  border: 1px solid var(--vr-border);
-  box-shadow: inset 0 0 0 2px rgba(99, 102, 241, 0.5);   /* anel accent discreto marca o facilitador */
+  width: 100%; min-width: 0; aspect-ratio: 16 / 9; max-height: none;
+  border: 1px solid var(--vr-border); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35), inset 0 0 0 2px rgba(99, 102, 241, .5);
 }
-.vr-pbl-side .vr-pbl-head[data-wide="1"] .vr-pbl-head-cam { aspect-ratio: 16 / 10; }
-/* Class code: delicado e integrado ao frame (tema escuro), com um destaque sutil
-   à esquerda e feedback ao copiar — nada do cartão branco que destoava. */
-.vr-pbl-side .vr-pbl-code-card {
-  flex: 0 0 clamp(150px, 33%, 214px); width: auto; max-width: 46%;
-  justify-content: center; gap: 7px; padding: 12px 14px;
-  background: linear-gradient(158deg, #1b2130, var(--vr-surface));
-  color: var(--vr-text);
-  border: 1px solid var(--vr-border); border-left: 2px solid rgba(99, 102, 241, .65);
-  border-radius: 12px; box-shadow: none;
-}
-.vr-pbl-side .vr-pbl-code-label {
-  color: var(--vr-text-dim); font-size: 10px; letter-spacing: 1.2px;
-  text-transform: uppercase; font-weight: 700; transition: color .15s;
-}
-.vr-pbl-side .vr-pbl-code-label[data-copied] { color: #22c55e; }
-.vr-pbl-side .vr-pbl-code { color: var(--vr-text); font-size: 24px; font-weight: 700; letter-spacing: 3px; transition: color .15s; }
-.vr-pbl-side .vr-pbl-code-ico { color: var(--vr-text-dim); }
-.vr-pbl-side .vr-pbl-code-ico:hover { color: var(--vr-text); }
-/* Toda a linha do código é clicável = copiar (desktop e mobile). */
-.vr-pbl-code-btn {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  width: 100%; margin: 0; padding: 2px 0 0; border: none; background: none;
-  cursor: pointer; text-align: left; color: inherit;
-  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-}
-.vr-pbl-code-btn:hover .vr-pbl-code,
-.vr-pbl-code-btn:hover .vr-pbl-code-copyico { color: var(--brand-accent-hover); }
-.vr-pbl-code-btn:active { transform: scale(.985); }
-.vr-pbl-code-copyico { color: var(--vr-text-dim); display: inline-flex; flex: none; opacity: .7; transition: color .15s, opacity .15s; }
-.vr-pbl-code-copyico svg { width: 15px; height: 15px; }
-.vr-pbl-code-btn:hover .vr-pbl-code-copyico { opacity: 1; }
-/* Apresentação flui dentro do frame: sem borda/raio/sombra próprios (o cartão
-   externa já arredonda os cantos de baixo via overflow:hidden). */
+.vr-pbl-side .vr-pbl-head[data-wide="1"] .vr-pbl-head-cam { aspect-ratio: 16 / 9; }
+/* Apresentação ocupa TODO o frame (a câmera flutua por cima como PiP). */
 .vr-pbl-side .vr-pbl-present-big {
   flex: 1; min-height: 0; border: none; border-radius: 0; box-shadow: none;
 }
+
+/* Foco TOTAL na Plenária: as questões (apresentação) ocupam o stage inteiro; a
+   grade dos alunos (e o chat, que vive dentro dela) e o PiP da câmera do
+   facilitador somem — destaque 100% para as questões. */
+.vr-stage[data-focus="plenary"] .vr-pbl-side { width: 100%; flex: 1; }
+.vr-stage[data-focus="plenary"] > .vr-grid-wrap { display: none; }
+.vr-stage[data-focus="plenary"] .vr-pbl-side .vr-pbl-head { display: none; }
 
 .vr-pbl-head { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); }
 .vr-pbl-head-cam {
@@ -738,19 +732,14 @@
 .vr-pbl-empty { grid-column: 1 / -1; display: grid; place-items: center; color: var(--vr-text-dim); font-size: 13px; padding: 40px 0; }
 @media (max-width: 768px) {
   .vr-stage[data-pbl="1"] { flex-direction: column; }
-  /* Celular: a APRESENTAÇÃO é o herói — ganha a maior parte da tela. Câmera do
-     facilitador + class code viram uma faixa compacta no topo do frame. */
-  .vr-pbl-side .vr-pbl-head { padding: 8px; gap: 8px; }
-  .vr-pbl-side .vr-pbl-head-cam { aspect-ratio: 16 / 9; }
-  .vr-pbl-side .vr-pbl-code-card { flex: 0 0 42%; padding: 8px 10px; gap: 4px; }
-  .vr-pbl-side .vr-pbl-code { font-size: 20px; letter-spacing: 2px; }
+  /* Celular: a APRESENTAÇÃO é o herói — ganha a maior parte da tela. A câmera do
+     facilitador volta ao fluxo como uma faixa compacta no topo do frame (sem PiP). */
+  .vr-pbl-side .vr-pbl-head {
+    position: static; pointer-events: auto; width: 100%; padding: 8px;
+    border-bottom: 1px solid var(--vr-border);
+  }
+  .vr-pbl-side .vr-pbl-head-cam { width: 100%; aspect-ratio: 16 / 9; max-height: 30vh; border-radius: 10px; }
   .vr-pbl-side .vr-pbl-present-big { flex: none; min-height: 54vh; }
-}
-/* Telas bem estreitas (raro): câmera e código empilham em largura total. */
-@media (max-width: 340px) {
-  .vr-pbl-side .vr-pbl-head { flex-direction: column; align-items: stretch; }
-  .vr-pbl-side .vr-pbl-head-cam { width: 100%; aspect-ratio: 16 / 10; }
-  .vr-pbl-side .vr-pbl-code-card { flex-basis: auto; max-width: none; width: 100%; }
 }
 
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
@@ -762,10 +751,6 @@
   box-shadow: var(--vr-shadow);
 }
 .vr-actbar-info { display: flex; flex-direction: column; line-height: 1.1; min-width: 168px; }
-.vr-actbar-cap {
-  font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
-  color: var(--vr-text-dim); font-weight: 700;
-}
 /* Etapa atual em destaque: fonte bem maior que a antiga (14px). */
 .vr-actbar-name { font-size: 20px; font-weight: 800; letter-spacing: -.2px; color: var(--vr-text); }
 /* Barrinha de progresso do sequenciador (preenche conforme avança). */
@@ -777,6 +762,16 @@
 }
 .vr-actbar-next:hover { background: #16a34a; }
 .vr-actbar-next svg { width: 20px; height: 20px; }
+/* Botão sequencial único: rótulo da etapa + ▶, verde (a cor do "Botão sequencial"). */
+.vr-actbar-seq {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 8px 12px 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  background: #22c55e; border: none; color: #fff; cursor: pointer; transition: background .15s;
+}
+.vr-actbar-seq:hover { background: #16a34a; }
+.vr-actbar-seq:disabled { opacity: .6; cursor: default; }
+.vr-actbar-seq svg { width: 18px; height: 18px; flex: none; }
+.vr-actbar-seq-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
 .vr-actbar-present {
   padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer;
   background: var(--vr-surface-2, #1f2937); color: var(--vr-text); border: 1px solid var(--vr-border);
@@ -790,6 +785,46 @@
   background: transparent; color: var(--vr-text-dim); border: 1px solid var(--vr-border);
 }
 .vr-actbar-ghost:hover { color: var(--vr-text); border-color: var(--brand-accent); }
+
+/* Faixa "Atividade atual" do aluno: nome da etapa (sincronizado com o sequenciador
+   do facilitador) + class-code à direita (só durante o registro). */
+.vr-student-activity {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin: 8px 12px 0; padding: 8px 16px;
+  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 12px;
+  box-shadow: var(--vr-shadow);
+}
+.vr-student-activity-info { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.vr-student-activity-cap {
+  font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--vr-text-dim); font-weight: 700;
+}
+.vr-student-activity-name { font-size: 18px; font-weight: 800; letter-spacing: -.2px; color: var(--vr-text); }
+
+/* Chip do class-code ao lado da etapa atual (barra do facilitador e faixa do aluno). */
+.vr-code-chip-wrap { display: flex; align-items: center; gap: 8px; flex: none; }
+.vr-code-chip {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 4px 12px; border-radius: 10px;
+  background: var(--vr-surface-2, #1f2937); border: 1px solid var(--vr-border); color: var(--vr-text);
+  transition: border-color .15s, transform .05s;
+}
+.vr-code-chip:hover { border-color: var(--brand-accent); }
+.vr-code-chip:active { transform: scale(.985); }
+.vr-code-chip-cap {
+  font-size: 9px; letter-spacing: .4px; text-transform: uppercase; color: var(--vr-text-dim); font-weight: 700;
+}
+.vr-code-chip-cap[data-copied] { color: #22c55e; }
+.vr-code-chip-val { font-size: 17px; font-weight: 800; letter-spacing: 2px; font-family: ui-monospace, monospace; }
+.vr-code-chip-ico { display: inline-flex; color: var(--vr-text-dim); opacity: .7; transition: opacity .15s; }
+.vr-code-chip-ico svg { width: 14px; height: 14px; }
+.vr-code-chip:hover .vr-code-chip-ico { opacity: 1; }
+.vr-code-chip-eye {
+  background: none; border: none; color: var(--vr-text-dim); cursor: pointer; padding: 2px; line-height: 0; display: inline-flex;
+}
+.vr-code-chip-eye:hover { color: var(--vr-text); }
+.vr-code-chip-eye svg { width: 16px; height: 16px; }
+.vr-code-chip-closed { font-size: 10px; color: var(--vr-danger); font-weight: 700; }
 
 /* ---------- Gráfico do Questionário de Riscos (radar) ---------- */
 .vr-chart-wrap {
