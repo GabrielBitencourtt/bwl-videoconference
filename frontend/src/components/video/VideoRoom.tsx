@@ -641,7 +641,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       // o overlay passa a trocar sozinho por qCount, sem depender do pacote avançar.
       if (d.type === "questions" && Array.isArray(d.list)) {
         const list = d.list.map((q: any) => String(q || "").trim()).filter(Boolean);
-        if (list.length) setPblQuestions(list);
+        // A ponte reenvia a cada tick — só atualiza (re-render) se a lista mudou.
+        if (list.length) setPblQuestions((prev) => prev.join("") === list.join("") ? prev : list);
       }
     };
     window.addEventListener("message", onMsg);
