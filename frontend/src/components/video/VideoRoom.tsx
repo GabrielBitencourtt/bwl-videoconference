@@ -658,17 +658,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     return () => { room.off(RoomEvent.DataReceived, onData); };
   }, [room]);
 
-  // Aluno: o popup abre automaticamente ao chegar no registro (uma vez por abertura).
-  const autoCodePopupRef = useRef(false);
-  useEffect(() => {
-    if (isStaff || !pblActive || !classCode) return;
-    if (studentCanSeeCode) {
-      if (!autoCodePopupRef.current) { autoCodePopupRef.current = true; setCodeExpand(true); }
-    } else {
-      autoCodePopupRef.current = false;   // registro fechou → reabre numa nova abertura
-    }
-  }, [isStaff, pblActive, classCode, studentCanSeeCode]);
-
   // Estado global dos grupos (breakout aberto?) — p/ as etapas Abrir/Encerrar grupos.
   const [breakoutOpen, setBreakoutOpen] = useState(false);
   useEffect(() => {
@@ -803,6 +792,21 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
         )}
 
+        {/* Atividade atual do aluno + class code, no próprio header (mesma linha da
+            marca e dos controles). O código só aparece enquanto o registro estiver
+            aberto; clicar copia e abre o popup. */}
+        {scorm && pblActive && !isStaff && (
+          <div className="vr-student-activity">
+            <div className="vr-student-activity-info">
+              <span className="vr-student-activity-cap">Atividade atual</span>
+              <span className="vr-student-activity-name">{curStep.head}</span>
+            </div>
+            {classCode && studentCanSeeCode && (
+              <ClassCodeChip code={classCode} copied={codeCopied} closed={false} onClick={onCodeChipClick} />
+            )}
+          </div>
+        )}
+
         {/* Canto superior direito: controles da chamada (antes eram uma pílula
             centralizada no rodapé), cronômetro/contagem e Encerrar sala. */}
         <div className="vr-header-right">
@@ -839,21 +843,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             onLeave={breakout.leave}
           />
         )}
-
-      {/* Faixa da atividade atual para o aluno: nome da etapa (sincronizado com o
-          sequenciador do facilitador) + class code, este só enquanto o registro
-          estiver aberto. Clicar no code copia e abre o popup. */}
-      {scorm && pblActive && !isStaff && (
-        <div className="vr-student-activity">
-          <div className="vr-student-activity-info">
-            <span className="vr-student-activity-cap">Atividade atual</span>
-            <span className="vr-student-activity-name">{curStep.head}</span>
-          </div>
-          {classCode && studentCanSeeCode && (
-            <ClassCodeChip code={classCode} copied={codeCopied} closed={false} onClick={onCodeChipClick} />
-          )}
-        </div>
-      )}
 
       {/* Coluna própria à esquerda (câmera do facilitador + class code no topo,
           apresentação abaixo) — IGUAL para host e aluno. O aluno recebe a
@@ -1369,7 +1358,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
       {studentTiles.map((t) => {
         const st = byId[t.participant.identity];
         return (
-          <div key={`${t.participant.identity}-st`} className="vr-pbl-tile" data-pkg={st?.in_package ? "in" : "out"}>
+          <div key={`${t.participant.identity}-st`} className="vr-pbl-tile" data-pkg={st?.registered ? "in" : "out"}>
             <ParticipantTile trackRef={t} />
             {st?.registered && <span className="vr-pbl-reg" title="Registrado na sessão (class-code inserido)">✓</span>}
           </div>
