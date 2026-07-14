@@ -1494,7 +1494,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
       {studentTiles.map((t) => {
         const st = byId[t.participant.identity];
         return (
-          <div key={`${t.participant.identity}-st`} className="vr-pbl-tile" data-pkg={st?.registered ? "in" : "out"}>
+          <div key={`${t.participant.identity}-st`} className="vr-pbl-tile" data-pkg={st?.in_package ? "in" : "out"}>
             <ParticipantTile trackRef={t} />
             {st?.registered && <span className="vr-pbl-reg" title="Registrado na sessão (class-code inserido)">✓</span>}
           </div>
