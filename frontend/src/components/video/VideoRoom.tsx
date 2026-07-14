@@ -628,6 +628,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
       if (!d || d.source !== "openpbl-package") return;
+      // DEBUG: confirma que as mensagens da ponte chegam (ver no console do webconf).
+      try { console.debug("[openpbl-msg]", d.type, d.type === "questions" ? (d.list?.length ?? 0) : (d.label || "")); } catch { /* */ }
       if (d.type === "step" && typeof d.label === "string") {
         setPblStep(d.label);
         // A partir da "Análise Situacional" a área do facilitador vira só o gráfico
@@ -1028,10 +1030,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   {/* Plenária: a questão provocadora real do pacote cobre o slide (o iframe
                       segue vivo por baixo p/ avançar). O recorte captura este overlay, então
                       o aluno vê a questão na mesma posição. */}
-                  {pblStage === "question" && (pblQuestions[qCount] || pblQuestion) && (
+                  {pblStage === "question" && (
                     <div className="vr-pbl-question">
                       <div className="vr-pbl-question-kicker">Reflexão {Math.min(qCount + 1, plenaryTotal)}/{plenaryTotal}</div>
-                      <div className="vr-pbl-question-text">{pblQuestions[qCount] || pblQuestion}</div>
+                      {(pblQuestions[qCount] || pblQuestion) ? (
+                        <div className="vr-pbl-question-text">{pblQuestions[qCount] || pblQuestion}</div>
+                      ) : (
+                        <div className="vr-pbl-question-waiting">
+                          Aguardando as questões do pacote…
+                          <span>Reempacote a apresentação (tipo PRESENTATION) informando as questões de reflexão.</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

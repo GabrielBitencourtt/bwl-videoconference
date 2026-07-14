@@ -913,6 +913,11 @@
   max-width: 22ch; text-wrap: balance;
   text-shadow: 0 2px 12px rgba(0,0,0,.25);
 }
+.vr-pbl-question-waiting {
+  display: flex; flex-direction: column; gap: 10px;
+  font-size: clamp(18px, 2vw, 26px); font-weight: 700; opacity: .92;
+}
+.vr-pbl-question-waiting span { font-size: 14px; font-weight: 500; opacity: .7; max-width: 34ch; }
 /* Apresentação transmitida (screen-share do professor) vista pelo aluno */
 .vr-present-share, .vr-present-share .lk-participant-tile { width: 100%; height: 100%; background: #000; }
 .vr-present-share video { width: 100%; height: 100%; object-fit: contain; background: #000; }
