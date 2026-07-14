@@ -467,6 +467,33 @@
 .vr-bo-hostbar-timer { font-size: 12px; color: var(--vr-text-dim); font-weight: 600; margin-left: auto; }
 .vr-bo-hostbar-msg { font-size: 12px; color: var(--brand-accent-hover); }
 
+/* "Sala do facilitador": overview que substitui a apresentação enquanto os grupos
+   estão abertos — só a lista dos grupos + o estado do áudio (broadcast p/ todos). */
+.vr-fac-room { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 16px; padding: 20px; overflow-y: auto; }
+.vr-fac-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.vr-fac-title { font-size: 18px; font-weight: 800; letter-spacing: -.2px; color: var(--vr-text); }
+.vr-fac-cast {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+  background: var(--vr-surface-2); color: var(--vr-text-dim); border: 1px solid var(--vr-border);
+}
+.vr-fac-cast[data-live] { background: rgba(34,197,94,.15); color: #22c55e; border-color: rgba(34,197,94,.4); }
+.vr-fac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.vr-fac-card {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 12px;
+  padding: 16px; box-shadow: var(--vr-shadow);
+}
+.vr-fac-card-name { font-size: 16px; font-weight: 700; color: var(--vr-text); }
+.vr-fac-card-n { font-size: 12px; color: var(--vr-text-dim); }
+.vr-fac-enter {
+  margin-top: 6px; width: 100%; text-align: center;
+  background: linear-gradient(135deg, var(--brand-accent), var(--brand-accent-hover));
+  color: #fff; border: none; border-radius: 10px; padding: 9px 12px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.vr-fac-enter:hover { filter: brightness(1.05); }
+
 /* Menu "⋮" (Grupos / OpenPBL / Configurações) na fileira de abas */
 .vr-tabs { position: relative; }
 .vr-tab-more { position: relative; flex: 0 0 auto; display: flex; }
@@ -647,12 +674,6 @@
   flex: 1; min-height: 0; border: none; border-radius: 0; box-shadow: none;
 }
 
-/* Foco TOTAL na Plenária: as questões (apresentação) ocupam o stage inteiro; a
-   grade dos alunos (e o chat, que vive dentro dela) e o PiP da câmera do
-   facilitador somem — destaque 100% para as questões. */
-.vr-stage[data-focus="plenary"] .vr-pbl-side { width: 100%; flex: 1; }
-.vr-stage[data-focus="plenary"] > .vr-grid-wrap { display: none; }
-.vr-stage[data-focus="plenary"] .vr-pbl-side .vr-pbl-head { display: none; }
 
 .vr-pbl-head { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-bottom: 1px solid var(--vr-border); }
 .vr-pbl-head-cam {

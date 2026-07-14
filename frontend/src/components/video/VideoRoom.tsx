@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback, lazy, Suspense, type ReactNode } from "react";
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
-  useTracks, useParticipants, useTrackToggle, useRoomContext,
+  useTracks, useParticipants, useTrackToggle, useRoomContext, useLocalParticipant,
 } from "@livekit/components-react";
-import { Track, RoomEvent } from "livekit-client";
+import { Track, RoomEvent, Room } from "livekit-client";
 import "@livekit/components-styles";
 import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
@@ -232,6 +232,9 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
       >
         <RoomShell roomId={roomId} roomTitle={roomTitle} isStaff={!!isStaff} inviteUrl={inviteUrl} senderName={displayName} identity={identity ?? undefined} breakout={boCtx} />
         {identity && <RemoteControlEnforcer roomId={roomId} identity={identity} isStaff={!!isStaff} />}
+        {isStaff && !breakout && identity && (
+          <HostBroadcast roomId={roomId} identity={identity} displayName={displayName} />
+        )}
         <RoomAudioRenderer />
         <AudioGate />
       </LiveKitRoom>
@@ -346,7 +349,7 @@ function BreakoutHostBar({ roomId, active, message, onEnter, onLeave }: {
   return (
     <div className="vr-bo-hostbar">
       <span className="vr-bo-hostbar-label">Visitar:</span>
-      <button className="vr-bo-chip" data-active={!active} onClick={onLeave}>Sala principal</button>
+      <button className="vr-bo-chip" data-active={!active} onClick={onLeave}>Sala do facilitador</button>
       {groups.map((g) => (
         <button key={g.id} className="vr-bo-chip" data-active={active?.groupId === g.id}
           onClick={() => onEnter({ id: g.id, name: g.name }, endsAt)}>
@@ -355,6 +358,149 @@ function BreakoutHostBar({ roomId, active, message, onEnter, onLeave }: {
       ))}
       {mmss && <span className="vr-bo-hostbar-timer">⏱ {mmss}</span>}
       {message && <span className="vr-bo-hostbar-msg">{message}</span>}
+    </div>
+  );
+}
+
+/* ---------------- Broadcast do host para todos os grupos ---------------------
+ *  Sufixo de identidade das conexões de fan-out do host. São participantes só-áudio
+ *  (sem câmera) que NÃO devem aparecer nas grades nem na contagem de participantes. */
+const BROADCAST_SUFFIX = "__bc";
+const isBroadcast = (id: string) => id.endsWith(BROADCAST_SUFFIX);
+
+/* HostBroadcast: publica o microfone do facilitador em TODAS as salas de grupo ao
+ *  mesmo tempo — a "sala do facilitador". Montado dentro do <LiveKitRoom> apenas
+ *  quando o host NÃO está visitando um grupo (gate `!breakout` em VideoRoom); ao
+ *  entrar num grupo este componente desmonta e o cleanup direciona o áudio só para
+ *  aquele grupo. Mantém uma conexão LiveKit crua por grupo, publish-only. */
+function HostBroadcast({ roomId, identity, displayName }: { roomId: string; identity: string; displayName?: string }) {
+  const sdk = useSDK();
+  const { microphoneTrack, isMicrophoneEnabled } = useLocalParticipant();
+  const srcTrack = microphoneTrack?.audioTrack?.mediaStreamTrack ?? null;
+  const srcTrackId = srcTrack?.id ?? null;
+  const micMuted = !isMicrophoneEnabled;
+
+  type Entry = { room: Room; clone: MediaStreamTrack | null; srcId: string | null };
+  const roomsRef = useRef<Map<string, Entry>>(new Map());
+  const genRef = useRef(0);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+
+  // Publica/atualiza o clone do mic numa sala, respeitando mute e troca de device.
+  const syncMic = (entry: Entry) => {
+    const lp = entry.room.localParticipant;
+    if (!srcTrack || micMuted) {
+      if (entry.clone) { try { lp.unpublishTrack(entry.clone, true); } catch { /* */ } entry.clone = null; entry.srcId = null; }
+      return;
+    }
+    if (entry.clone && entry.srcId !== srcTrackId) {
+      try { lp.unpublishTrack(entry.clone, true); } catch { /* */ }
+      entry.clone = null; entry.srcId = null;
+    }
+    if (!entry.clone) {
+      const clone = srcTrack.clone();
+      entry.clone = clone; entry.srcId = srcTrackId;
+      lp.publishTrack(clone, { source: Track.Source.Microphone, name: "host-broadcast" }).catch(() => { /* */ });
+    }
+  };
+
+  const detach = (gid: string) => {
+    const entry = roomsRef.current.get(gid);
+    if (!entry) return;
+    if (entry.clone) { try { entry.room.localParticipant.unpublishTrack(entry.clone, true); } catch { /* */ } }
+    entry.room.disconnect();
+    roomsRef.current.delete(gid);
+  };
+  const teardownAll = () => { for (const gid of [...roomsRef.current.keys()]) detach(gid); };
+
+  // Estado dos grupos (aberto? quais?) — reflete abrir/fechar e add/remove de grupo.
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => sdk.breakouts.state(roomId).then((s) => {
+      if (!alive) return;
+      setOpen(s.open); setGroupIds(s.groups.map((g) => g.id));
+    }).catch(() => { /* */ });
+    refresh();
+    const off = sdk.subscribe(roomId, (e) => { if (typeof e === "string" && e.startsWith("breakout")) refresh(); });
+    return () => { alive = false; off(); };
+  }, [roomId]);
+
+  // Reconciliação: conecta nos grupos que faltam, desconecta os que sumiram.
+  const groupKey = [...groupIds].sort().join(",");
+  useEffect(() => {
+    if (!open) { teardownAll(); return; }
+    const gen = ++genRef.current;
+    const wanted = new Set(groupIds);
+    for (const gid of [...roomsRef.current.keys()]) if (!wanted.has(gid)) detach(gid);
+    (async () => {
+      for (const gid of groupIds) {
+        if (roomsRef.current.has(gid)) continue;
+        const room = new Room();
+        const entry: Entry = { room, clone: null, srcId: null };
+        roomsRef.current.set(gid, entry);   // reserva o slot antes do await (StrictMode/corridas)
+        try {
+          const t = await sdk.breakouts.token(roomId, gid, `${identity}${BROADCAST_SUFFIX}`, displayName);
+          if (gen !== genRef.current) { room.disconnect(); roomsRef.current.delete(gid); return; }
+          await room.connect(t.livekit_url, t.token, { autoSubscribe: false }); // publish-only
+          if (gen !== genRef.current) { room.disconnect(); roomsRef.current.delete(gid); return; }
+          syncMic(entry);
+        } catch { roomsRef.current.delete(gid); }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, groupKey]);
+
+  // Segue o mute do mic e trocas de microfone em todas as salas conectadas.
+  useEffect(() => {
+    for (const entry of roomsRef.current.values()) syncMic(entry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srcTrackId, micMuted, groupKey]);
+
+  // Teardown ao desmontar (entrar num grupo, sair da sala, fim da aula).
+  useEffect(() => () => { genRef.current++; teardownAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
+/* HostBreakoutOverview: o que o facilitador vê na "sala do facilitador" — só a lista
+ *  dos grupos (nome + nº de alunos) com "Entrar e lecionar", e o indicador de que o
+ *  áudio dele está indo para todos os grupos. Substitui a apresentação enquanto os
+ *  grupos estão abertos e ele não entrou em nenhum. */
+function HostBreakoutOverview({ roomId, onEnter }: {
+  roomId: string;
+  onEnter: (g: { id: string; name: string }, endsAt: string | null) => void;
+}) {
+  const sdk = useSDK();
+  const { isMicrophoneEnabled } = useLocalParticipant();
+  const [groups, setGroups] = useState<BreakoutGroup[]>([]);
+  const [endsAt, setEndsAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    const refresh = () => sdk.breakouts.state(roomId).then((s) => {
+      setGroups(s.groups); setEndsAt(s.ends_at);
+    }).catch(() => { /* */ });
+    refresh();
+    return sdk.subscribe(roomId, (e) => { if (typeof e === "string" && e.startsWith("breakout")) refresh(); });
+  }, [roomId]);
+
+  return (
+    <div className="vr-fac-room">
+      <div className="vr-fac-head">
+        <span className="vr-fac-title">Sala do facilitador</span>
+        <span className="vr-fac-cast" data-live={isMicrophoneEnabled || undefined}>
+          {isMicrophoneEnabled ? "🎙 Falando para todos os grupos" : "🔇 Microfone desligado"}
+        </span>
+      </div>
+      <div className="vr-fac-grid">
+        {groups.length === 0 && <div className="vr-pbl-empty">Nenhum grupo aberto.</div>}
+        {groups.map((g) => (
+          <div className="vr-fac-card" key={g.id}>
+            <div className="vr-fac-card-name">{g.name}</div>
+            <div className="vr-fac-card-n">{g.members.length} {g.members.length === 1 ? "aluno" : "alunos"}</div>
+            <button className="vr-fac-enter" onClick={() => onEnter({ id: g.id, name: g.name }, endsAt)}>Entrar e lecionar</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -430,7 +576,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
-  const participants = useParticipants();
+  const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
   const canEditBoard = isStaff || boardEdit;
@@ -593,13 +739,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // Radar de Riscos: aparece na "Análise situacional" (após liberar a análise de riscos).
   const chartAvailable = pblStage === "release_risks";
 
-  // Plenária (Discussão em plenária / Questão para reflexão): foco TOTAL nas questões —
-  // a apresentação ocupa tudo e câmera/grade/chat somem. Para o host aplica sempre
-  // (ele tem o iframe); para o aluno só quando há transmissão, evitando um card vazio.
-  const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }], { onlySubscribed: false });
-  const remoteScreenShare = screenShareTracks.some((t) => t.publication && !t.participant.isLocal);
-  const plenaryStage = pblActive && (pblStage === "plenary" || pblStage === "question");
-  const plenaryFocus = plenaryStage && (isStaff || remoteScreenShare);
+  // A apresentação fica SEMPRE no frame ao lado da câmera do facilitador e da grade
+  // de alunos — nunca ocupa a tela inteira (nem na plenária/questões).
   const [chartHidden, setChartHidden] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
   const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
@@ -845,8 +986,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       {/* Coluna própria à esquerda (câmera do facilitador + class code no topo,
           apresentação abaixo) — IGUAL para host e aluno. O aluno recebe a
           apresentação transmitida (screen-share) na MESMA posição do iframe do host. */}
-      <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined} data-focus={plenaryFocus ? "plenary" : undefined}>
-        {pblActive && (
+      <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined}>
+        {/* Durante os grupos, o facilitador NÃO vê a apresentação — só os grupos. */}
+        {pblActive && !(isStaff && breakoutOpen) && (
           <aside className="vr-pbl-side">
             <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
             {isStaff ? (
@@ -870,9 +1012,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         )}
         <div className="vr-grid-wrap">
-          {scorm
-            ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} sideScreen={pblActive} />
-            : <VideoGrid />}
+          {isStaff && breakoutOpen && !breakout.active
+            ? <HostBreakoutOverview roomId={roomId} onEnter={breakout.enter} />
+            : scorm
+              ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} sideScreen={pblActive} />
+              : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
               <Suspense fallback={<div className="vr-center">Carregando quadro…</div>}>
@@ -991,7 +1135,7 @@ function VideoGrid() {
     );
   }
 
-  const cams = tracks.filter((t) => t.source === Track.Source.Camera);
+  const cams = tracks.filter((t) => t.source === Track.Source.Camera && !isBroadcast(t.participant.identity));
   return (
     <GridLayout tracks={cams} style={{ height: "100%" }}>
       <ParticipantTile />
@@ -1341,7 +1485,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
 
-  const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity));
+  const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity) && !isBroadcast(t.participant.identity));
 
   // O strip é uma faixa horizontal rolável; só a grade cheia se ajusta ao espaço.
   const { ref: gridRef, cols } = useFittedCols(strip ? 0 : studentTiles.length);
@@ -1402,7 +1546,7 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity }: { roster: any |
 
 function PeoplePanel({ roomId, isStaff, inviteUrl }: { roomId: string; isStaff: boolean; inviteUrl: string | null }) {
   const sdk = useSDK();
-  const participants = useParticipants();
+  const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
   const [copied, setCopied] = useState(false);
   // Estado local do que o host bloqueou por participante (true = bloqueado).
   const [blocked, setBlocked] = useState<Record<string, { screen?: boolean }>>({});
