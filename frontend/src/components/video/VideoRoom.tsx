@@ -420,10 +420,8 @@ function PreJoin({ title, name, camOn, micOn, setCamOn, setMicOn, onJoin }: {
 /* ---------------- In-room shell ---------------- */
 function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx }) {
   const sdk = useSDK();
-  // No celular o painel começa fechado pra mostrar o vídeo; no desktop abre no chat.
-  const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(
-    () => (typeof window !== "undefined" && window.innerWidth <= 768 ? null : "chat"),
-  );
+  // O painel começa sempre fechado (chat/participantes) — o vídeo aparece inteiro.
+  const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);   // Configurações = modal central
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
