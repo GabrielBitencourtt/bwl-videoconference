@@ -574,6 +574,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [pblRoster, setPblRoster] = useState<any | null>(null);   // status dos alunos (OpenPBL)
   const [pblStep, setPblStep] = useState<string>("");             // título do slide atual (reportado pelo pacote)
   const [situacionalReached, setSituacionalReached] = useState(false);  // apresentação chegou na "Análise Situacional" → área vira só gráfico
+  const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -631,6 +632,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         // A partir da "Análise Situacional" a área do facilitador vira só o gráfico
         // (latch: uma vez alcançada, permanece). Detecção por conteúdo do título.
         if (/situacional/i.test(d.label)) setSituacionalReached(true);
+        // Corpo do slide = texto da questão provocadora (mostrado na plenária no
+        // lugar do pacote). Só atualiza quando o pacote manda algo não-vazio.
+        if (typeof d.body === "string" && d.body.trim()) setPblQuestion(d.body.trim());
       }
     };
     window.addEventListener("message", onMsg);
@@ -1009,6 +1013,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 // para transmitir aos alunos (Fase 1 da plenária).
                 <div className="vr-pbl-present-big" ref={presentElRef}>
                   <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+                  {/* Plenária: a questão provocadora real do pacote cobre o slide (o iframe
+                      segue vivo por baixo p/ avançar). O recorte captura este overlay, então
+                      o aluno vê a questão na mesma posição. */}
+                  {pblStage === "question" && pblQuestion && (
+                    <div className="vr-pbl-question">
+                      <div className="vr-pbl-question-kicker">Questão para reflexão</div>
+                      <div className="vr-pbl-question-text">{pblQuestion}</div>
+                    </div>
+                  )}
                 </div>
               )
             ) : (
