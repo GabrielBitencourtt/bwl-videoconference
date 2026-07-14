@@ -576,7 +576,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [situacionalReached, setSituacionalReached] = useState(false);  // apresentação chegou na "Análise Situacional" → área vira só gráfico
   const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
   const [pblQuestions, setPblQuestions] = useState<string[]>([]); // TODAS as questões da plenária, pré-carregadas do carousel do pacote (ordem Reflexão 1..N)
-  const [plenaryQ, setPlenaryQ] = useState<{ text: string; index: number; total: number } | null>(null); // questão da plenária recebida pelo aluno (via dados, sem screen-share)
+  const [plenaryQ, setPlenaryQ] = useState<{ list: string[]; total: number } | null>(null); // questões da plenária reveladas até agora (recebidas pelo aluno via dados, sem screen-share)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -808,9 +808,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       try {
         const m = JSON.parse(new TextDecoder().decode(payload));
         if (m?.source === "webconf" && m?.type === "code-expand") setCodeExpand(!!m.expanded);
-        // Aluno recebe a questão da plenária por dados (sem screen-share). text vazio = limpar.
-        if (m?.source === "webconf" && m?.type === "plenary-question")
-          setPlenaryQ(m.text ? { text: String(m.text), index: m.index || 0, total: m.total || 1 } : null);
+        // Aluno recebe as questões reveladas da plenária por dados (sem screen-share).
+        // Lista vazia = limpar (fora da etapa). Dedupe: o heartbeat reenvia a cada 3s.
+        if (m?.source === "webconf" && m?.type === "plenary-questions") {
+          const list: string[] = Array.isArray(m.list) ? m.list.map(String) : [];
+          const total = m.total || list.length;
+          setPlenaryQ((prev) => {
+            if (!list.length) return prev ? null : prev;
+            if (prev && prev.total === total && prev.list.join("") === list.join("")) return prev;
+            return { list, total };
+          });
+        }
       } catch { /* */ }
     };
     room.on(RoomEvent.DataReceived, onData);
@@ -840,17 +848,23 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // disponível; senão cai no padrão. Torna o sequenciador independente do "×5" fixo.
   const plenaryTotal = pblQuestions.length || PLENARY_QUESTIONS;
 
-  // Facilitador transmite a questão atual da plenária por DADOS (não por screen-share):
-  // o aluno renderiza o mesmo overlay. Reenvia a cada 3s enquanto na etapa, para quem
-  // entrar depois. Fora da etapa, envia text vazio (limpa no aluno).
+  // Questões REVELADAS até agora (cascata): da 1ª até a atual (qCount). Acumula a cada
+  // clique. Fallback para o corpo do slide (pblQuestion) quando não há lista do pacote.
+  const revealedQuestions = pblStage === "question"
+    ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : (pblQuestion ? [pblQuestion] : []))
+    : [];
+
+  // Facilitador transmite as questões reveladas da plenária por DADOS (não por
+  // screen-share): o aluno renderiza a MESMA cascata. Reenvia a cada 3s enquanto na
+  // etapa, para quem entrar depois. Fora da etapa, envia lista vazia (limpa no aluno).
   useEffect(() => {
     if (!isStaff || !room) return;
     const inQ = pblStage === "question";
     const send = () => {
       try {
-        const text = inQ ? (pblQuestions[qCount] || pblQuestion || "") : "";
+        const list = inQ ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : (pblQuestion ? [pblQuestion] : [])) : [];
         const data = new TextEncoder().encode(JSON.stringify({
-          source: "webconf", type: "plenary-question", text, index: qCount, total: plenaryTotal,
+          source: "webconf", type: "plenary-questions", list, total: plenaryTotal,
         }));
         room.localParticipant?.publishData(data, { reliable: true });
       } catch { /* */ }
@@ -1057,9 +1071,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                       o aluno vê a questão na mesma posição. */}
                   {pblStage === "question" && (
                     <div className="vr-pbl-question">
-                      <div className="vr-pbl-question-kicker">Reflexão {Math.min(qCount + 1, plenaryTotal)}/{plenaryTotal}</div>
-                      {(pblQuestions[qCount] || pblQuestion) ? (
-                        <div className="vr-pbl-question-text">{pblQuestions[qCount] || pblQuestion}</div>
+                      {revealedQuestions.length ? (
+                        <div className="vr-pbl-qcascade">
+                          {revealedQuestions.map((q, i) => (
+                            <div className="vr-pbl-qcard" key={i}>
+                              <span className="vr-pbl-qcard-num">{i + 1}</span>
+                              <span className="vr-pbl-qcard-text">{q}</span>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <div className="vr-pbl-question-waiting">
                           Aguardando as questões do pacote…
@@ -1070,15 +1090,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   )}
                 </div>
               )
-            ) : plenaryQ?.text ? (
-              // Aluno na plenária: recebe a questão por dados (sem screen-share) e mostra
-              // o MESMO overlay que o facilitador, na mesma posição.
+            ) : plenaryQ?.list?.length ? (
+              // Aluno na plenária: recebe as questões por dados (sem screen-share) e mostra
+              // a MESMA cascata de cards que o facilitador, na mesma posição.
               <div className="vr-pbl-present-big">
                 <div className="vr-pbl-question">
-                  <div className="vr-pbl-question-kicker">
-                    Reflexão {Math.min((plenaryQ.index || 0) + 1, plenaryQ.total || 1)}/{plenaryQ.total || 1}
+                  <div className="vr-pbl-qcascade">
+                    {plenaryQ.list.map((q, i) => (
+                      <div className="vr-pbl-qcard" key={i}>
+                        <span className="vr-pbl-qcard-num">{i + 1}</span>
+                        <span className="vr-pbl-qcard-text">{q}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="vr-pbl-question-text">{plenaryQ.text}</div>
                 </div>
               </div>
             ) : (

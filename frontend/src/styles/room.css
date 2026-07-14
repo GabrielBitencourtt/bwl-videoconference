@@ -918,6 +918,39 @@
   font-size: clamp(18px, 2vw, 26px); font-weight: 700; opacity: .92;
 }
 .vr-pbl-question-waiting span { font-size: 14px; font-weight: 500; opacity: .7; max-width: 34ch; }
+
+/* Cascata de questões: cada clique revela mais um card (retângulo), acumulando. */
+.vr-pbl-qcascade {
+  display: flex; flex-direction: column; gap: 14px;
+  width: 100%; max-width: 40ch; max-height: 100%;
+  overflow-y: auto; padding: 4px;
+  scrollbar-width: thin;
+}
+.vr-pbl-qcard {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 18px; border-radius: 14px;
+  background: rgba(255, 255, 255, .14);
+  border: 1px solid rgba(255, 255, 255, .28);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  backdrop-filter: blur(2px);
+  text-align: left;
+  animation: vrCascadeIn .5s cubic-bezier(.2, .8, .25, 1) both;
+}
+.vr-pbl-qcard-num {
+  flex: none; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: #fff; color: #6d28d9;
+  font-size: 15px; font-weight: 800;
+}
+.vr-pbl-qcard-text {
+  font-size: clamp(15px, 1.7vw, 24px); font-weight: 700; line-height: 1.3;
+  color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .25);
+}
+@keyframes vrCascadeIn {
+  from { opacity: 0; transform: translateY(-18px) scale(.94); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}
 /* Apresentação transmitida (screen-share do professor) vista pelo aluno */
 .vr-present-share, .vr-present-share .lk-participant-tile { width: 100%; height: 100%; background: #000; }
 .vr-present-share video { width: 100%; height: 100%; object-fit: contain; background: #000; }
