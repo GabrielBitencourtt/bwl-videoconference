@@ -575,6 +575,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [pblStep, setPblStep] = useState<string>("");             // título do slide atual (reportado pelo pacote)
   const [situacionalReached, setSituacionalReached] = useState(false);  // apresentação chegou na "Análise Situacional" → área vira só gráfico
   const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
+  const [pblQuestions, setPblQuestions] = useState<string[]>([]); // TODAS as questões da plenária, pré-carregadas do carousel do pacote (ordem Reflexão 1..N)
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
@@ -632,9 +633,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         // A partir da "Análise Situacional" a área do facilitador vira só o gráfico
         // (latch: uma vez alcançada, permanece). Detecção por conteúdo do título.
         if (/situacional/i.test(d.label)) setSituacionalReached(true);
-        // Corpo do slide = texto da questão provocadora (mostrado na plenária no
-        // lugar do pacote). Só atualiza quando o pacote manda algo não-vazio.
+        // Corpo do slide = texto da questão provocadora (fallback do overlay se a
+        // lista pré-carregada ainda não chegou). Só atualiza se não-vazio.
         if (typeof d.body === "string" && d.body.trim()) setPblQuestion(d.body.trim());
+      }
+      // Lista completa das questões de reflexão, pré-carregada do carousel do pacote:
+      // o overlay passa a trocar sozinho por qCount, sem depender do pacote avançar.
+      if (d.type === "questions" && Array.isArray(d.list)) {
+        const list = d.list.map((q: any) => String(q || "").trim()).filter(Boolean);
+        if (list.length) setPblQuestions(list);
       }
     };
     window.addEventListener("message", onMsg);
@@ -822,6 +829,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     try { setPblClass(await sdk.openpbl.setStage(roomId, id)); } catch { /* */ }
   };
 
+  // Total de questões da plenária: vem do pacote (carousel pré-carregado) quando
+  // disponível; senão cai no padrão. Torna o sequenciador independente do "×5" fixo.
+  const plenaryTotal = pblQuestions.length || PLENARY_QUESTIONS;
+
   // Botão sequencial: executa a AÇÃO da etapa atual (efeitos ✅ da webconf + um "next"
   // best-effort ao pacote) e avança para a próxima. Alguns efeitos INTERNOS do pacote
   // (endereçar pergunta verde→vermelho, converter quadros p/ verde, desconectar ao fim
@@ -871,14 +882,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // do sequenciador inicia a transmissão — é o gesto do usuário exigido pelo
           // getDisplayMedia). Resiliente: se ainda não está transmitindo, (re)inicia.
           if (!presenting) await togglePresent();
-          // 1ª questão: inicia a gravação. Cada clique avança para a próxima questão no
-          // pacote; após 5, passa para a Análise situacional.
+          // 1ª questão: inicia a gravação. O overlay troca sozinho pela lista pré-carregada
+          // (qCount) — NÃO avançamos o pacote aqui: as questões são um carousel dentro de
+          // uma lição, e o "next" navegaria entre lições, não entre as questões.
           if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
-          presentationPost("next");
           // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
           const n = qCount + 1;
           setQCount(n);
-          if (n >= PLENARY_QUESTIONS) {
+          if (n >= plenaryTotal) {
             if (presenting) await togglePresent().catch(() => {});
             await goToStep("situational");
           }
@@ -925,7 +936,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           <ActivityBar
             stage={pblStage} head={curStep.head} busy={stageBusy}
             stepLabel={pblStage === "question"
-              ? `Questão para reflexão (${Math.min(qCount + 1, PLENARY_QUESTIONS)}/${PLENARY_QUESTIONS})`
+              ? `Questão para reflexão (${Math.min(qCount + 1, plenaryTotal)}/${plenaryTotal})`
               : curStep.action}
             onRun={runStep}
             chartAvailable={chartAvailable} chartHidden={chartHidden}
@@ -1016,10 +1027,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   {/* Plenária: a questão provocadora real do pacote cobre o slide (o iframe
                       segue vivo por baixo p/ avançar). O recorte captura este overlay, então
                       o aluno vê a questão na mesma posição. */}
-                  {pblStage === "question" && pblQuestion && (
+                  {pblStage === "question" && (pblQuestions[qCount] || pblQuestion) && (
                     <div className="vr-pbl-question">
-                      <div className="vr-pbl-question-kicker">Questão para reflexão</div>
-                      <div className="vr-pbl-question-text">{pblQuestion}</div>
+                      <div className="vr-pbl-question-kicker">Reflexão {Math.min(qCount + 1, plenaryTotal)}/{plenaryTotal}</div>
+                      <div className="vr-pbl-question-text">{pblQuestions[qCount] || pblQuestion}</div>
                     </div>
                   )}
                 </div>
