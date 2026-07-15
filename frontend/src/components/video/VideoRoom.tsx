@@ -808,6 +808,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [chartHidden, setChartHidden] = useState(false);
   const [stageBusy, setStageBusy] = useState(false);
   const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
+  // Fallback quando o pacote NÃO manda a lista pré-carregada (`pblQuestions` vazio):
+  // acumulamos os corpos de slide (pblQuestion) à medida que o pacote avança, formando
+  // a mesma cascata. Sem isto o overlay ficava preso na 1ª questão.
+  const [qBodies, setQBodies] = useState<string[]>([]);
 
   // ---- Class code (ao lado da etapa atual) + popup grande transmitido p/ a sala ----
   // Facilitador vê sempre; o aluno só enquanto o registro está aberto (e não oculto).
@@ -884,8 +888,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     });
   }, [scorm, roomId]);
 
-  // Reset do contador de questões ao sair da etapa de plenária.
-  useEffect(() => { if (pblStage !== "question") setQCount(0); }, [pblStage]);
+  // Reset do contador/lista de questões ao sair da etapa de plenária.
+  useEffect(() => { if (pblStage !== "question") { setQCount(0); setQBodies([]); } }, [pblStage]);
+
+  // Na plenária, cada corpo de slide que o pacote reporta (pblQuestion) entra na cascata
+  // acumulada — é o que faz as questões avançarem quando não há lista pré-carregada.
+  useEffect(() => {
+    if (pblStage !== "question") return;
+    const q = pblQuestion.trim();
+    if (!q) return;
+    setQBodies((prev) => (prev[prev.length - 1] === q || prev.includes(q)) ? prev : [...prev, q]);
+  }, [pblStage, pblQuestion]);
 
   const goToStep = async (id: OpenPblStage) => {
     try { setPblClass(await sdk.openpbl.setStage(roomId, id)); } catch { /* */ }
@@ -918,10 +931,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     return () => clearInterval(id);
   }, []);
 
-  // Questões REVELADAS até agora (cascata): da 1ª até a atual (qCount). Acumula a cada
-  // clique. Fallback para o corpo do slide (pblQuestion) quando não há lista do pacote.
+  // Questões REVELADAS até agora (cascata): com lista pré-carregada, da 1ª até a atual
+  // (qCount); sem lista, os corpos de slide acumulados (qBodies), que crescem a cada
+  // avanço do pacote. Antes o fallback era um único corpo → travava na 1ª questão.
   const revealedQuestions = pblStage === "question"
-    ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : (pblQuestion ? [pblQuestion] : []))
+    ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : qBodies)
     : [];
 
   // Facilitador transmite as questões reveladas da plenária por DADOS (não por
@@ -932,7 +946,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const inQ = pblStage === "question";
     const send = () => {
       try {
-        const list = inQ ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : (pblQuestion ? [pblQuestion] : [])) : [];
+        const list = inQ ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : qBodies) : [];
         const data = new TextEncoder().encode(JSON.stringify({
           source: "webconf", type: "plenary-questions", list, total: plenaryTotal,
         }));
@@ -943,7 +957,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!inQ) return;
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
-  }, [amController, room, pblStage, qCount, pblQuestions, pblQuestion, plenaryTotal]);
+  }, [amController, room, pblStage, qCount, pblQuestions, qBodies, plenaryTotal]);
 
   // Re-recorta a transmissão para a área do pacote sempre que ela (re)aparece — ex.: após
   // os grupos o iframe remonta e o CropTarget antigo fica órfão (o aluno veria preto).
@@ -1014,10 +1028,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // do sequenciador inicia a transmissão — é o gesto do usuário exigido pelo
           // getDisplayMedia). Resiliente: se ainda não está transmitindo, (re)inicia.
           // A questão é transmitida por DADOS (overlay no aluno) — NÃO usamos screen-share
-          // aqui (nada de prompt de compartilhar tela). O overlay troca sozinho pela lista
-          // pré-carregada (qCount); não avançamos o pacote (o carousel é dentro da lição).
+          // aqui (nada de prompt de compartilhar tela). Com lista pré-carregada o overlay
+          // troca sozinho pela qCount; SEM lista, avançamos o carousel do pacote a cada
+          // clique → o novo corpo do slide chega pela ponte e entra na cascata (qBodies).
           // 1ª questão: inicia a gravação.
           if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
+          if (!pblQuestions.length) presentationPost("next");
           // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
           const n = qCount + 1;
           setQCount(n);
@@ -1574,7 +1590,7 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
           )}
         </div>
       )}
-      <div className="vr-pbl-qcascade">
+      <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}>
         {items.map((q, i) => (
           <div className="vr-pbl-qcard" key={i} data-latest={emphasize && i === count - 1 ? "1" : undefined}>
             <span className="vr-pbl-qcard-num">{i + 1}</span>

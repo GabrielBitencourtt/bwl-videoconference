@@ -962,51 +962,47 @@
 }
 .vr-present-iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
 
-/* Plenária: overlay NATIVO com as questões de reflexão reveladas em cascata. O host
-   e o aluno renderizam o MESMO componente (o aluno recebe a lista por LiveKit data),
-   então este estilo vale para os dois. Slide "premium": gradiente violeta em camadas
-   com brilho radial + vinheta, e um leve fade-in ao entrar na etapa. */
+/* Plenária: overlay NATIVO com as questões de reflexão em cascata. Estilo MINIMALISTA:
+   segue o fundo da webconf (mesmos tokens do tema → white-label) em vez de um slide
+   colorido; o texto usa a cor de texto do tema (alto contraste com o fundo escuro).
+   O host e o aluno renderizam o MESMO componente (o aluno recebe a lista por dados). */
 .vr-pbl-question {
   position: absolute; inset: 0; z-index: 5;
   display: flex; flex-direction: column; gap: clamp(10px, 1.6vh, 18px);
   padding: clamp(14px, 2.2vh, 26px) clamp(16px, 1.9vw, 30px);
-  color: #fff;
-  background:
-    radial-gradient(120% 85% at 50% -12%, rgba(196, 181, 253, .55) 0%, rgba(124, 58, 237, 0) 58%),
-    radial-gradient(95% 120% at 108% 112%, rgba(46, 6, 82, .65) 0%, rgba(46, 6, 82, 0) 55%),
-    linear-gradient(155deg, #3b0764 0%, #5b21b6 48%, #6d28d9 100%);
-  animation: vrOverlayIn .5s ease both;
+  color: var(--vr-text);
+  /* Mesmo fundo da sala (.vr-root) → o overlay "some" no fundo da webconf. */
+  background: radial-gradient(1200px 600px at 50% -10%, var(--vr-surface) 0%, var(--vr-bg) 60%);
+  animation: vrOverlayIn .4s ease both;
 }
 @keyframes vrOverlayIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* Cabeçalho: rótulo (ícone + título) à esquerda; progresso (●) à direita. */
+/* Cabeçalho minimalista: rótulo discreto à esquerda; progresso (●) à direita. */
 .vr-pbl-qhead {
   flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .vr-pbl-qhead-label {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: clamp(11px, 1.05vw, 14px); font-weight: 800;
-  letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .9);
-  padding: 6px 13px; border-radius: 999px;
-  background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .22);
+  font-size: clamp(11px, 1.05vw, 13px); font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--vr-text-dim);
 }
-.vr-pbl-qhead-ico { font-size: 1.2em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+.vr-pbl-qhead-ico { font-size: 1.1em; opacity: .9; }
 .vr-pbl-qdots { display: inline-flex; align-items: center; gap: 7px; }
 .vr-pbl-qdot {
-  width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, .3);
-  transition: background .3s ease, box-shadow .3s ease, transform .3s ease;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--vr-border);
+  transition: background .3s ease, transform .3s ease;
 }
-.vr-pbl-qdot[data-on="1"] { background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, .18); }
+.vr-pbl-qdot[data-on="1"] { background: var(--brand-accent); transform: scale(1.1); }
 
 .vr-pbl-question-waiting {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; text-align: center;
-  font-size: clamp(18px, 2vw, 26px); font-weight: 800; opacity: .95;
+  font-size: clamp(18px, 2vw, 26px); font-weight: 700; color: var(--vr-text);
 }
-.vr-pbl-question-waiting span { font-size: 14px; font-weight: 500; opacity: .7; max-width: 34ch; }
+.vr-pbl-question-waiting span { font-size: 14px; font-weight: 500; color: var(--vr-text-dim); max-width: 34ch; }
 
-/* Cascata: cada clique revela mais um card (retângulo), acumulando. Preenche a área e
-   distribui a altura entre os cards (flex) → ~5 cabem sem scroll. */
+/* Cascata: cada clique revela mais um card, acumulando. Distribui a altura (flex) →
+   ~5 cabem sem scroll. Cada card novo desliza pela lateral ao surgir. */
 .vr-pbl-qcascade {
   flex: 1; min-height: 0; width: 100%;
   display: flex; flex-direction: column; gap: clamp(8px, 1.4vh, 14px);
@@ -1015,50 +1011,41 @@
   position: relative;
   flex: 1 1 0; min-height: 0; overflow: hidden;
   display: flex; align-items: center; gap: clamp(12px, 1.3vw, 18px);
-  padding: clamp(10px, 1.5vh, 18px) clamp(16px, 1.8vw, 26px); border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .08));
-  border: 1px solid rgba(255, 255, 255, .24);
-  box-shadow: 0 8px 22px rgba(20, 0, 50, .28);
-  backdrop-filter: blur(4px);
+  padding: clamp(10px, 1.5vh, 18px) clamp(16px, 1.8vw, 26px); border-radius: var(--vr-radius);
+  background: var(--vr-surface); border: 1px solid var(--vr-border);
   text-align: left;
-  transition: background .4s ease, border-color .4s ease, box-shadow .4s ease;
-  animation: vrCascadeIn .55s cubic-bezier(.16, .84, .28, 1.02) both;
+  transition: background .4s ease, border-color .4s ease, box-shadow .4s ease, opacity .4s ease;
+  animation: vrCascadeIn .5s cubic-bezier(.16, .84, .28, 1.02) both;
 }
-/* Card mais recente: realce (borda/anel + brilho) e um pulso único ao surgir, para
-   guiar o olhar até a questão que acabou de ser revelada — sem apagar as anteriores. */
+/* Só na cascata progressiva (questões): os cards já revelados ficam um pouco recuados
+   e o mais recente é o foco. Nas dimensões (todas de uma vez) todos ficam nítidos. */
+.vr-pbl-qcascade[data-emphasize="1"] .vr-pbl-qcard:not([data-latest="1"]) { opacity: .68; }
+/* Card mais recente: realce sutil com a cor de destaque da licença (accent). */
 .vr-pbl-qcard[data-latest="1"] {
-  background: linear-gradient(180deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .14));
-  border-color: rgba(255, 255, 255, .62);
-  box-shadow: 0 10px 30px rgba(20, 0, 50, .42), inset 0 0 0 1px rgba(255, 255, 255, .25);
-  animation: vrCascadeIn .55s cubic-bezier(.16, .84, .28, 1.02) both, vrLatestPulse 1.7s ease 1;
+  background: var(--vr-surface-2); border-color: var(--brand-accent);
+  box-shadow: 0 0 0 1px var(--brand-accent), 0 10px 26px -12px rgba(0, 0, 0, .7);
 }
 .vr-pbl-qcard-num {
   flex: none; display: grid; place-items: center;
   width: clamp(28px, 2.6vw, 38px); height: clamp(28px, 2.6vw, 38px); border-radius: 50%;
-  background: linear-gradient(145deg, #ffffff, #ede9fe); color: #6d28d9;
-  font-size: clamp(14px, 1.35vw, 18px); font-weight: 900;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, .25);
+  background: var(--vr-surface-2); border: 1px solid var(--vr-border);
+  color: var(--vr-text-dim); font-size: clamp(14px, 1.35vw, 18px); font-weight: 800;
 }
 .vr-pbl-qcard[data-latest="1"] .vr-pbl-qcard-num {
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .3), 0 0 0 4px rgba(255, 255, 255, .22);
+  background: var(--brand-accent); border-color: var(--brand-accent); color: #fff;
 }
 .vr-pbl-qcard-text {
   flex: 1; min-width: 0;
-  font-size: clamp(14px, 1.55vw, 24px); font-weight: 700; line-height: 1.3;
-  color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .3);
+  font-size: clamp(14px, 1.55vw, 24px); font-weight: 600; line-height: 1.3;
+  color: var(--vr-text);
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
 }
+/* Entrada: desliza da lateral (direita) + fade, como uma carta passando pro lado. */
 @keyframes vrCascadeIn {
-  from { opacity: 0; transform: translateY(-16px) scale(.96); filter: blur(3px); }
-  60%  { opacity: 1; filter: blur(0); }
-  to   { opacity: 1; transform: none; filter: blur(0); }
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: none; }
 }
-@keyframes vrLatestPulse {
-  0%   { box-shadow: 0 10px 30px rgba(20, 0, 50, .42), 0 0 0 0 rgba(255, 255, 255, .5); }
-  70%  { box-shadow: 0 10px 30px rgba(20, 0, 50, .42), 0 0 0 14px rgba(255, 255, 255, 0); }
-  100% { box-shadow: 0 10px 30px rgba(20, 0, 50, .42), 0 0 0 0 rgba(255, 255, 255, 0); }
-}
-/* Acessibilidade: quem pede menos movimento recebe só o fade, sem deslize/pulso. */
+/* Acessibilidade: quem pede menos movimento recebe só o fade, sem deslize. */
 @media (prefers-reduced-motion: reduce) {
   .vr-pbl-question, .vr-pbl-qcard { animation: vrOverlayIn .3s ease both; }
   .vr-pbl-qcard { transition: none; }
