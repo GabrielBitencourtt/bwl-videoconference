@@ -1,10 +1,12 @@
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
-from ..auth import get_current_user, CurrentUser
+from pydantic import BaseModel
+from ..auth import get_current_user, optional_user, CurrentUser
 from ..config import settings
 from ..db import pool
 from ..models.schemas import RoomCreate, RoomOut, BookingSync, PermissionUpdate
 from ..realtime.hub import hub
+from ..room_roles import roles as _roles, roles_public as _roles_public, is_host_or_mod as _is_host_or_mod
 from ..services.recording_service import presigned_url
 from ..services.livekit_service import set_participant_sources, remove_participant, list_participant_identities
 from ..tenancy import resolve_tenant_id, get_effective_limits, normalize_branding
@@ -28,6 +30,44 @@ def _is_scorm(slug: str | None) -> bool:
     if not slug:
         return False
     return slug in {s.strip() for s in settings.scorm_tenant_slugs.split(",") if s.strip()}
+
+
+class RolesUpdate(BaseModel):
+    add_moderator: str | None = None
+    remove_moderator: str | None = None
+    set_controller: bool = False       # aplica `controller` (aceita None p/ liberar)
+    controller: str | None = None
+    set_pinned: bool = False           # aplica `pinned` (aceita None p/ voltar ao host)
+    pinned: str | None = None
+
+
+@router.get("/{room_id}/roles")
+async def get_roles(room_id: str, user: CurrentUser | None = Depends(optional_user)):
+    """Papéis atuais da sessão (público — todos leem p/ renderizar câmera fixada etc.)."""
+    return _roles_public(room_id)
+
+
+@router.post("/{room_id}/roles")
+async def set_roles(room_id: str, body: RolesUpdate, user: CurrentUser = Depends(get_current_user)):
+    """Anfitrião/moderador promove moderadores, assume o controle e fixa a câmera."""
+    if not _is_host_or_mod(room_id, user):
+        raise HTTPException(403)
+    r = _roles(room_id)
+    if body.add_moderator:
+        r["moderators"].add(body.add_moderator)
+    if body.remove_moderator:
+        r["moderators"].discard(body.remove_moderator)
+        if r["controller"] == body.remove_moderator:
+            r["controller"] = None
+        if r["pinned"] == body.remove_moderator:
+            r["pinned"] = None
+    if body.set_controller:
+        r["controller"] = body.controller or None
+    if body.set_pinned:
+        r["pinned"] = body.pinned or None
+    payload = _roles_public(room_id)
+    await hub.broadcast(room_id, "roles-updated", payload)
+    return payload
 
 
 @router.post("", response_model=RoomOut)
@@ -193,7 +233,7 @@ async def end_room(
         raise HTTPException(404)
     if str(row["tenant_id"]) != tenant_id:
         raise HTTPException(403, "room does not belong to this tenant")
-    if not user.is_staff and row["owner_id"] != user.id:
+    if not _is_host_or_mod(room_id, user) and row["owner_id"] != user.id:
         raise HTTPException(403)
     await pool().execute(
         "UPDATE video_rooms SET status='ended', ended_at=now(), updated_at=now() WHERE id=$1",
@@ -210,7 +250,7 @@ async def update_permissions(
     body: PermissionUpdate,
     user: CurrentUser = Depends(get_current_user),
 ):
-    if not user.is_staff:
+    if not _is_host_or_mod(room_id, user):
         raise HTTPException(403)
     fields, values = [], []
     for i, (k, v) in enumerate([(f, getattr(body, f)) for f in
@@ -255,7 +295,7 @@ async def update_permissions(
 @router.post("/{room_id}/moderation/{action}")
 async def moderation(room_id: str, action: str, target: dict, user: CurrentUser = Depends(get_current_user)):
     """action ∈ force-mute | force-unmute | force-camera-off | force-kick"""
-    if not user.is_staff:
+    if not _is_host_or_mod(room_id, user):
         raise HTTPException(403)
     if action not in {"force-mute", "force-unmute", "force-camera-off", "force-kick"}:
         raise HTTPException(400, "bad action")
@@ -274,7 +314,7 @@ async def moderation(room_id: str, action: str, target: dict, user: CurrentUser 
 async def update_room_permissions(room_id: str, body: PermissionUpdate, user: CurrentUser = Depends(get_current_user)):
     """Permissões globais da sala durante a chamada (aba de configurações do host).
     Atualiza o padrão (novos participantes) e aplica aos atuais, exceto o próprio host."""
-    if not user.is_staff:
+    if not _is_host_or_mod(room_id, user):
         raise HTTPException(403)
     sets, args = [], []
     for f in ("allow_camera", "allow_mic", "allow_screen_share", "allow_whiteboard_edit"):

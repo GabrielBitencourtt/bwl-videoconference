@@ -7,6 +7,7 @@ import { Track, RoomEvent, Room } from "livekit-client";
 import "@livekit/components-styles";
 import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
+import { guestAuth } from "../../lib/guest-auth";
 import { applyBranding, type Branding } from "../../lib/branding";
 import type { BreakoutState, BreakoutGroup, OpenPblStage } from "../../lib/video-rooms-sdk";
 import RoomChat from "./RoomChat";
@@ -583,7 +584,36 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
-  const canEditBoard = isStaff || boardEdit;
+
+  // ── Papéis de sessão: moderadores (poderes de host), controlador (dirige o
+  //    sequenciador — "assumir controle") e câmera fixada na área de conteúdo. ──
+  const [moderators, setModerators] = useState<string[]>([]);
+  const [controller, setController] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const amModerator = !!identity && moderators.includes(identity);
+  const amStaff = isStaff || amModerator;                             // anfitrião OU moderador
+  const amController = controller ? controller === identity : isStaff; // sem controlador => host original
+
+  // Convidado promovido a moderador autentica pelo guestSdk (X-User-*).
+  useEffect(() => {
+    if (identity) { guestAuth.id = identity; guestAuth.name = senderName || identity; }
+  }, [identity, senderName]);
+
+  const applyRoles = (r: { moderators?: string[]; controller?: string | null; pinned?: string | null }) => {
+    if (Array.isArray(r.moderators)) setModerators(r.moderators);
+    setController(r.controller ?? null);
+    setPinned(r.pinned ?? null);
+  };
+  useEffect(() => {
+    sdk.roles.get(roomId).then(applyRoles).catch(() => {});
+    return sdk.subscribe(roomId, (event, payload) => {
+      if (event === "roles-updated") applyRoles(payload);
+    });
+  }, [roomId]);
+  const setRole = (body: Parameters<typeof sdk.roles.set>[1]) =>
+    sdk.roles.set(roomId, body).then((r: any) => applyRoles(r)).catch(() => {});
+
+  const canEditBoard = amStaff || boardEdit;
   const room = useRoomContext();
   const [presenting, setPresenting] = useState(false);          // apresentação sendo transmitida
   const presentTrackRef = useRef<MediaStreamTrack | null>(null);
@@ -688,7 +718,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const toggleBoard = () => {
     const next = !showBoard;
     setShowBoard(next);
-    if (isStaff) sdk.whiteboard.toggle(roomId, next).catch(() => {});
+    if (amStaff) sdk.whiteboard.toggle(roomId, next).catch(() => {});
   };
 
   // Transmite SÓ a área da apresentação aos alunos, recortando o compartilhamento
@@ -737,7 +767,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
 
   // Facilitador com a aula OpenPBL ativa: ganha a coluna esquerda (câmera + código
   // + apresentação). Sem a turma criada ainda, cai no layout comum de alunos.
-  const pblHost = !!(scorm && isStaff && pblRoster?.activity_id);
+  // Vê a área do facilitador (pacote/questões/gráfico + header) = qualquer host/moderador.
+  const pblHost = !!(scorm && amStaff && pblRoster?.activity_id);
   const pblActive = !!(scorm && pblRoster?.activity_id);   // host OU aluno na aula OpenPBL
 
   // Sequenciamento do facilitador (botão verde ▶): estado da aula OpenPBL + etapa.
@@ -800,8 +831,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     setCodeCopied(true); setTimeout(() => setCodeCopied(false), 1400);
   };
   // Clique no chip: copia + abre o popup. O facilitador transmite p/ todos presentes.
-  const onCodeChipClick = () => { copyClassCode(); setCodeExpand(true); if (isStaff) broadcastCodeExpand(true); };
-  const closeCodePopup = () => { setCodeExpand(false); if (isStaff) broadcastCodeExpand(false); };
+  const onCodeChipClick = () => { copyClassCode(); setCodeExpand(true); if (amStaff) broadcastCodeExpand(true); };
+  const closeCodePopup = () => { setCodeExpand(false); if (amStaff) broadcastCodeExpand(false); };
   // Facilitador oculta/reexibe o code apenas para os ALUNOS (ele continua vendo).
   const toggleCodeForStudents = () => sdk.openpbl.setCodeVisible(roomId, !codeHiddenForStudents).catch(() => {});
 
@@ -882,7 +913,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // screen-share): o aluno renderiza a MESMA cascata. Reenvia a cada 3s enquanto na
   // etapa, para quem entrar depois. Fora da etapa, envia lista vazia (limpa no aluno).
   useEffect(() => {
-    if (!isStaff || !room) return;
+    if (!amController || !room) return;   // só quem tem o controle transmite (sem duplicar)
     const inQ = pblStage === "question";
     const send = () => {
       try {
@@ -897,7 +928,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!inQ) return;
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
-  }, [isStaff, room, pblStage, qCount, pblQuestions, pblQuestion, plenaryTotal]);
+  }, [amController, room, pblStage, qCount, pblQuestions, pblQuestion, plenaryTotal]);
 
   // Re-recorta a transmissão para a área do pacote sempre que ela (re)aparece — ex.: após
   // os grupos o iframe remonta e o CropTarget antigo fica órfão (o aluno veria preto).
@@ -1051,7 +1082,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         {/* Atividade atual do aluno + class code, no próprio header (mesma linha da
             marca e dos controles). O código só aparece enquanto o registro estiver
             aberto; clicar copia e abre o popup. */}
-        {scorm && pblActive && !isStaff && (
+        {scorm && pblActive && !amStaff && (
           <div className="vr-student-activity">
             <div className="vr-student-activity-info">
               <span className="vr-student-activity-cap">Atividade atual</span>
@@ -1073,7 +1104,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
             </button>
           )}
-          {pblHost && (
+          {/* Só o CONTROLADOR dirige o sequenciador. Outros host/moderadores veem
+              "Assumir controle" (evita dois apresentando ao mesmo tempo). */}
+          {pblHost && !amController && (
+            <button className="vr-seq-label" title="Assumir o controle da apresentação/sequenciador"
+              onClick={() => identity && setRole({ set_controller: true, controller: identity })}>
+              Assumir controle
+            </button>
+          )}
+          {pblHost && amController && (
             <div className="vr-seq" data-danger={pblStage === "done" || undefined}>
               <button className="vr-seq-label" onClick={runStep} disabled={stageBusy} title={seqLabel}>
                 {stageBusy ? "…" : seqLabel}
@@ -1086,7 +1125,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             </div>
           )}
           <ControlBar
-            isStaff={isStaff}
+            isStaff={amStaff}
             scorm={scorm}
             panel={panel}
             setPanel={setPanel}
@@ -1102,7 +1141,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             {recording && <span className="vr-rec">REC</span>}
             {/* Encerrar sala: fora do OpenPBL, botão dedicado. No OpenPBL ele vira a
                 ÚLTIMA tarefa do sequenciador (etapa "done"). */}
-            {isStaff && !pblHost && (
+            {amStaff && !pblHost && (
               <button className="vr-end-btn" onClick={() => setConfirmEnd(true)} title="Encerrar a sala para todos">Encerrar sala</button>
             )}
           </div>
@@ -1125,10 +1164,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           apresentação transmitida (screen-share) na MESMA posição do iframe do host. */}
       <div className="vr-stage" data-pbl={scorm && !pblActive ? "1" : undefined}>
         {/* Durante os grupos, o facilitador NÃO vê a apresentação — só os grupos. */}
-        {pblActive && !(isStaff && breakoutOpen) && (
+        {pblActive && !(amStaff && breakoutOpen) && (
           <aside className="vr-pbl-side">
-            <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />
-            {isStaff ? (
+            <PblPanelHeader roster={pblRoster} localIsStaff={amStaff} localIdentity={identity} pinned={pinned} />
+            {amStaff ? (
               chartAvailable ? (
                 // Análise situacional em diante: SÓ o gráfico radar (ocultável). Sem pacote.
                 !chartHidden ? (
@@ -1185,15 +1224,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           </aside>
         )}
         <div className="vr-grid-wrap">
-          {isStaff && breakoutOpen && !breakout.active
+          {amStaff && breakoutOpen && !breakout.active
             ? <HostBreakoutOverview roomId={roomId} onEnter={breakout.enter} />
             : scorm
-              ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} sideScreen={pblActive} />
+              ? <OpenPblStudentsGrid roster={pblRoster} localIsStaff={amStaff} localIdentity={identity} sideScreen={pblActive} />
               : <VideoGrid />}
           {showBoard && (
             <div className="vr-wb-overlay">
               <Suspense fallback={<div className="vr-center">Carregando quadro…</div>}>
-                <Whiteboard roomId={roomId} canEdit={canEditBoard} isHost={isStaff} />
+                <Whiteboard roomId={roomId} canEdit={canEditBoard} isHost={amStaff} />
               </Suspense>
             </div>
           )}
@@ -1202,7 +1241,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               à esquerda / topo) permanecem 100% visíveis. */}
           {(panel === "chat" || panel === "people") && (
             <aside className="vr-panel vr-panel-overlay">
-              {scorm && !pblActive && <PblPanelHeader roster={pblRoster} localIsStaff={isStaff} localIdentity={identity} />}
+              {scorm && !pblActive && <PblPanelHeader roster={pblRoster} localIsStaff={amStaff} localIdentity={identity} pinned={pinned} />}
               <div className="vr-tabs">
                 <button className="vr-tab" data-active={panel === "chat"} onClick={() => setPanel("chat")}>Chat</button>
                 <button className="vr-tab" data-active={panel === "people"} onClick={() => setPanel("people")}>
@@ -1211,12 +1250,18 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               </div>
               <div className="vr-panel-body">
                 {panel === "chat" && <RoomChat roomId={roomId} senderName={senderName} channel={breakout.active?.groupId} channelLabel={breakout.active?.groupName} />}
-                {panel === "people" && <PeoplePanel roomId={roomId} isStaff={isStaff} inviteUrl={inviteUrl} />}
+                {panel === "people" && (
+                  <PeoplePanel
+                    roomId={roomId} isStaff={amStaff} inviteUrl={inviteUrl}
+                    roster={pblRoster} moderators={moderators} controller={controller}
+                    pinned={pinned} localIdentity={identity} onSetRole={setRole}
+                  />
+                )}
               </div>
             </aside>
           )}
         </div>
-        {panel && (panel === "breakout" || panel === "scorm") && isStaff && (
+        {panel && (panel === "breakout" || panel === "scorm") && amStaff && (
           // Seção dedicada (host): SUBSTITUI o painel, in-flow (empurra a grade).
           <aside className="vr-panel">
             <div className="vr-panel-head">
@@ -1239,7 +1284,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         )}
       </div>
 
-      {settingsOpen && isStaff && (
+      {settingsOpen && amStaff && (
         <div className="vr-sheet-backdrop" onClick={() => setSettingsOpen(false)}>
           <div className="vr-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="vr-sheet-head">
@@ -1269,7 +1314,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       {/* Popup grande do class code — abre ao clicar no chip (facilitador transmite
           p/ todos) e, para o aluno, automaticamente ao entrar no registro. O aluno
           não vê o popup se o facilitador tiver ocultado o código para a turma. */}
-      {pblActive && classCode && codeExpand && (isStaff || !codeHiddenForStudents) && (
+      {pblActive && classCode && codeExpand && (amStaff || !codeHiddenForStudents) && (
         <div className="vr-sheet-backdrop" onClick={closeCodePopup}>
           <div className="vr-pbl-code-big" onClick={(e) => e.stopPropagation()}>
             <button className="vr-sheet-close vr-pbl-big-x" onClick={closeCodePopup} aria-label="Fechar">✕</button>
@@ -1672,14 +1717,16 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
 
 /** Header do painel (OpenPBL): câmera do facilitador destacada. O class-code saiu
  *  daqui e passou a viver ao lado da etapa atual (ver ClassCodeChip / popup). */
-function PblPanelHeader({ roster, localIsStaff, localIdentity }: { roster: any | null; localIsStaff: boolean; localIdentity?: string }) {
+function PblPanelHeader({ roster, localIsStaff, localIdentity, pinned }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; pinned?: string | null }) {
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }], { onlySubscribed: false });
 
   const byId: Record<string, any> = {};
   (roster?.students || []).forEach((s: any) => { byId[s.identity] = s; });
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
-  const hostTrack = tracks.find((t) => isHostTile(t.participant.identity));
+  // Câmera na área de conteúdo: a FIXADA (pinned) quando definida; senão, o anfitrião.
+  const pinnedTrack = pinned ? tracks.find((t) => t.participant.identity === pinned) : null;
+  const hostTrack = pinnedTrack || tracks.find((t) => isHostTile(t.participant.identity));
 
   if (!hostTrack) return null;
   return (
@@ -1689,12 +1736,23 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity }: { roster: any |
   );
 }
 
-function PeoplePanel({ roomId, isStaff, inviteUrl }: { roomId: string; isStaff: boolean; inviteUrl: string | null }) {
+function PeoplePanel({ roomId, isStaff, inviteUrl, roster, moderators, controller, pinned, localIdentity, onSetRole }: {
+  roomId: string; isStaff: boolean; inviteUrl: string | null;
+  roster?: any | null; moderators?: string[]; controller?: string | null; pinned?: string | null;
+  localIdentity?: string; onSetRole?: (body: any) => void;
+}) {
   const sdk = useSDK();
   const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
   const [copied, setCopied] = useState(false);
   // Estado local do que o host bloqueou por participante (true = bloqueado).
   const [blocked, setBlocked] = useState<Record<string, { screen?: boolean }>>({});
+
+  const mods = moderators || [];
+  const byId: Record<string, any> = {};
+  (roster?.students || []).forEach((s: any) => { byId[s.identity] = s; });
+  // Host/moderador = staff no roster OU promovido. Só esses podem ser fixados/controlar.
+  const isHostOrMod = (id: string) => !!byId[id]?.is_staff || mods.includes(id) || (id === localIdentity && isStaff);
+  const isMod = (id: string) => mods.includes(id);
 
   const mod = (id: string, action: string) => sdk.rooms.moderate(roomId, action, { user_id: id }).catch(() => {});
   const setPerm = (id: string, key: "screen_share", allow: boolean) => {
@@ -1737,6 +1795,26 @@ function PeoplePanel({ roomId, isStaff, inviteUrl }: { roomId: string; isStaff: 
                     {screenBlocked ? "Liberar tela" : "Bloquear tela"}
                   </button>
                   <button className="vr-mini vr-mini-danger" onClick={() => kick(p.identity, nm)} title="Remover da sala">Remover</button>
+                  {/* Papéis: moderador (poderes de host), fixar câmera e passar controle. */}
+                  <button className="vr-mini" data-on={isMod(p.identity) || undefined}
+                    onClick={() => onSetRole?.(isMod(p.identity) ? { remove_moderator: p.identity } : { add_moderator: p.identity })}
+                    title="Moderador tem os mesmos poderes do anfitrião">
+                    {isMod(p.identity) ? "Remover moderador" : "Tornar moderador"}
+                  </button>
+                  {isHostOrMod(p.identity) && (
+                    <button className="vr-mini" data-on={pinned === p.identity || undefined}
+                      onClick={() => onSetRole?.({ set_pinned: true, pinned: pinned === p.identity ? null : p.identity })}
+                      title="Fixar a webcam desta pessoa na área de conteúdo">
+                      {pinned === p.identity ? "Fixada ✓" : "Fixar na tela"}
+                    </button>
+                  )}
+                  {isHostOrMod(p.identity) && controller !== p.identity && (
+                    <button className="vr-mini"
+                      onClick={() => onSetRole?.({ set_controller: true, controller: p.identity })}
+                      title="Passar o controle do sequenciador/apresentação para esta pessoa">
+                      Dar controle
+                    </button>
+                  )}
                 </div>
               )}
             </div>

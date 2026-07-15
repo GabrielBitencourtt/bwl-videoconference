@@ -3,13 +3,14 @@ from ..auth import get_current_user, optional_user, CurrentUser
 from ..db import pool
 from ..models.schemas import LobbyJoin, LobbyDecision
 from ..realtime.hub import hub
+from ..room_roles import is_host_or_mod
 
 router = APIRouter(prefix="/api/rooms/{room_id}/lobby", tags=["lobby"])
 
 
 @router.get("")
 async def list_lobby(room_id: str, user: CurrentUser = Depends(get_current_user)):
-    if not user.is_staff:
+    if not is_host_or_mod(room_id, user):
         raise HTTPException(403)
     rows = await pool().fetch(
         "SELECT * FROM video_room_lobby WHERE room_id=$1 AND status='waiting' ORDER BY created_at",
@@ -46,7 +47,7 @@ async def decide(
     room_id: str, lobby_id: str, body: LobbyDecision,
     user: CurrentUser = Depends(get_current_user),
 ):
-    if not user.is_staff:
+    if not is_host_or_mod(room_id, user):
         raise HTTPException(403)
     status = "admitted" if body.admit else "denied"
     row = await pool().fetchrow(

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Route, Routes, useParams } from "react-router-dom";
 import { SDKContext } from "./lib/sdk-context";
 import { createVideoRoomsSDK } from "./lib/video-rooms-sdk";
+import { guestAuth } from "./lib/guest-auth";
 import { applyBranding } from "./lib/branding";
 import { clientApi } from "./client/clientApi";
 import VideoRoom from "./components/video/VideoRoom";
@@ -30,7 +31,10 @@ const wsBase = import.meta.env.VITE_WS_BASE || "ws://localhost:8000";
 const sdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}), credentials: "include" });
 
 /** Guests join via invite token — no host auth headers. */
-const guestSdk = createVideoRoomsSDK({ apiBase, wsBase, headers: () => ({}) });
+const guestSdk = createVideoRoomsSDK({
+  apiBase, wsBase,
+  headers: () => guestAuth.id ? { "X-User-Id": guestAuth.id, "X-User-Name": guestAuth.name, "X-User-Role": "user" } : {},
+});
 
 const STATUS_LABEL: Record<string, string> = { active: "ativa", ended: "encerrada" };
 function fmtDate(iso?: string): string {

@@ -246,6 +246,16 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
         return res.json() as Promise<{ key: string; name: string; url: string }>;
       },
     },
+    roles: {
+      /** Papéis da sessão: moderadores, controlador (sequenciador) e câmera fixada. */
+      get: (roomId: string) =>
+        call<{ moderators: string[]; controller: string | null; pinned: string | null }>(`/api/rooms/${roomId}/roles`),
+      set: (roomId: string, body: {
+        add_moderator?: string; remove_moderator?: string;
+        set_controller?: boolean; controller?: string | null;
+        set_pinned?: boolean; pinned?: string | null;
+      }) => call(`/api/rooms/${roomId}/roles`, { method: "POST", body: JSON.stringify(body) }),
+    },
     openpbl: {
       /** Estado da aula OpenPBL da sala (class-code, gates, registro). */
       classState: (roomId: string) => call<OpenPblClass>(`/api/rooms/${roomId}/openpbl`),
