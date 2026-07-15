@@ -891,6 +891,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // Class-code só é liberado (mostrado ao facilitador) DEPOIS de clicar em "Iniciar o
   // registro" — ou seja, a partir da etapa de "Encerrar o registro" (registro aberto).
   const codeReleased = !!classCode && stepIndex(pblStage) >= stepIndex("registration_close");
+  // Código no header (esquerda): facilitador após iniciar o registro; aluno enquanto o
+  // registro está aberto e não oculto. O header do aluno espelha o do facilitador.
+  const showBrandCode = !!classCode && (amStaff ? codeReleased : studentCanSeeCode);
 
   // Relógio (HH:MM) no header do facilitador, ao lado do class-code. Atualiza a cada 20s.
   useEffect(() => {
@@ -1047,26 +1050,30 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           {brand?.logo_url
             ? <img className="vr-logo vr-logo-img" src={brand.logo_url} alt="" />
             : <div className="vr-logo">V</div>}
-          {/* Facilitador na aula OpenPBL: em vez do nome da sala, mostra o horário; o
-              class-code só aparece DEPOIS de iniciar o registro (codeReleased). */}
-          {pblHost ? (
+          {/* Na aula OpenPBL (facilitador OU aluno): em vez do nome da sala, mostra o
+              horário e o class-code (mesmo header para todos). O olho de ocultar o
+              código é exclusivo do host/moderador; o código em si respeita a
+              visibilidade de cada papel (showBrandCode). */}
+          {pblActive ? (
             <div className="vr-brandmeta">
               <span className="vr-clock">{clock}</span>
-              {codeReleased && (
+              {showBrandCode && (
                 <>
                   <span className="vr-brandmeta-sep">|</span>
-                  {/* Class-code como TEXTO puro (mesma fonte do relógio), sem box e sem o
-                      rótulo "Class code" — clicável (copia + amplia) com o ícone ao lado. */}
+                  {/* Class-code como TEXTO puro (mesma fonte do relógio) — clicável
+                      (copia + amplia) com o ícone ao lado. */}
                   <button type="button" className="vr-code-plain" onClick={onCodeChipClick} title="Clique para copiar e ampliar o código">
                     <span className="vr-clock">{codeCopied ? "Copiado!" : classCode}</span>
                     <span className="vr-code-plain-ico" aria-hidden>{I.copy}</span>
                   </button>
-                  <button
-                    type="button" className="vr-code-plain-eye" onClick={toggleCodeForStudents}
-                    title={codeHiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
-                  >
-                    {codeHiddenForStudents ? I.eyeOff : I.eye}
-                  </button>
+                  {amStaff && (
+                    <button
+                      type="button" className="vr-code-plain-eye" onClick={toggleCodeForStudents}
+                      title={codeHiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
+                    >
+                      {codeHiddenForStudents ? I.eyeOff : I.eye}
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -1075,24 +1082,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           )}
         </div>
 
-        {/* Centro: SOMENTE a atividade atual (o class-code foi para a esquerda e o
-            botão ▶ para a direita). */}
-        {pblHost && <ActivityBar stage={pblStage} head={curStep.head} />}
-
-        {/* Atividade atual do aluno + class code, no próprio header (mesma linha da
-            marca e dos controles). O código só aparece enquanto o registro estiver
-            aberto; clicar copia e abre o popup. */}
-        {scorm && pblActive && !amStaff && (
-          <div className="vr-student-activity">
-            <div className="vr-student-activity-info">
-              <span className="vr-student-activity-cap">Atividade atual</span>
-              <span className="vr-student-activity-name">{curStep.head}</span>
-            </div>
-            {classCode && studentCanSeeCode && (
-              <ClassCodeChip code={classCode} copied={codeCopied} closed={false} onClick={onCodeChipClick} />
-            )}
-          </div>
-        )}
+        {/* Centro: SOMENTE a atividade atual — IGUAL para facilitador e aluno (o
+            class-code foi para a esquerda; o ▶ é só do controlador, na direita). */}
+        {pblActive && <ActivityBar stage={pblStage} head={curStep.head} />}
 
         {/* Canto superior direito: controles da chamada (antes eram uma pílula
             centralizada no rodapé), cronômetro/contagem e Encerrar sala. */}
