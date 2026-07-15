@@ -588,6 +588,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [pubTitle, setPubTitle] = useState("");
   const [packageUrl, setPackageUrl] = useState<string | null>(null);  // URL do Pacote de Classe → QR code
   const [qrOpen, setQrOpen] = useState(false);
+  const [roomDimensions, setRoomDimensions] = useState<string[]>([]);  // dimensões de risco da sala (cascata na Análise situacional)
 
   // ── Papéis de sessão: moderadores (poderes de host), controlador (dirige o
   //    sequenciador — "assumir controle") e câmera fixada na área de conteúdo. ──
@@ -632,6 +633,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       setScorm(!!(r as any).scorm);
       setBoardEdit(!!(r as any).allow_whiteboard_edit);   // padrão da sala
       setPackageUrl((r as any).class_package_url || null);
+      setRoomDimensions(Array.isArray((r as any).risk_dimensions) ? (r as any).risk_dimensions : []);
       applyBranding(r.branding as Branding);
     }).catch(() => {});
   }, [roomId]);
@@ -1183,7 +1185,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 ) : null
               ) : showDimensions ? (
                 // Análise situacional: cascata das DIMENSÕES de risco (injetadas na sala).
-                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
+                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
               ) : (showPackage || showQuestionsArea) ? (
                 // Até a plenária: o pacote embutido (recorte transmitido aos alunos). Na
                 // plenária ele fica MONTADO POR BAIXO (a ponte segue viva enviando as
@@ -1558,19 +1560,22 @@ function RiskChart({ roomId }: { roomId: string }) {
 /** Cascata das DIMENSÕES de risco (etapa "Análise situacional") — mesma animação das
  *  questões da plenária. As dimensões vêm do dimensionsId informado na criação da sala
  *  (via /risk-chart, liberado a qualquer participante). */
-function RiskDimensions({ roomId }: { roomId: string }) {
+function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
   const sdk = useSDK();
-  const [dims, setDims] = useState<string[]>([]);
+  const [fetched, setFetched] = useState<string[]>([]);
+  const hasRoomDims = !!(roomDims && roomDims.length);
   useEffect(() => {
+    if (hasRoomDims) return;   // veio da criação da sala → não depende de aluno
     let alive = true;
     const load = () => sdk.openpbl.riskChart(roomId).then((r: any) => {
       const d = r?.chart?.dimensions;
-      if (alive && Array.isArray(d) && d.length) setDims(d);
+      if (alive && Array.isArray(d) && d.length) setFetched(d);
     }).catch(() => {});
     load();
     const iv = setInterval(load, 5000);
     return () => { alive = false; clearInterval(iv); };
-  }, [roomId]);
+  }, [roomId, hasRoomDims]);
+  const dims = hasRoomDims ? (roomDims as string[]) : fetched;
   return (
     <div className="vr-pbl-question">
       {dims.length ? (

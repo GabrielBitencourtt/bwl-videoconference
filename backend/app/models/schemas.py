@@ -24,6 +24,7 @@ class RoomCreate(BaseModel):
     openpbl_activity_id: Optional[str] = None   # aula OpenPBL: auto-gera o class-code ao entrar
     openpbl_dimensions_id: Optional[str] = None  # aula OpenPBL: dimensionsId p/ o gráfico de riscos
     class_package_url: Optional[str] = None      # URL do Pacote de Classe → QR code p/ os alunos
+    risk_dimensions: Optional[list[str]] = None   # nomes das dimensões de risco (cascata na Análise situacional)
 
 
 class RoomOut(BaseModel):
@@ -54,6 +55,7 @@ class RoomOut(BaseModel):
     openpbl_activity_id: Optional[str] = None
     openpbl_dimensions_id: Optional[str] = None
     class_package_url: Optional[str] = None
+    risk_dimensions: Optional[list[str]] = None
     scheduled_at: Optional[datetime]
     ended_at: Optional[datetime]
     created_at: datetime

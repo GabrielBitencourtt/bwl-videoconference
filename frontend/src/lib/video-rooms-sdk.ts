@@ -171,6 +171,7 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
           lobby_enabled?: boolean; lobby_timer_title?: string | null;
           lobby_timer_seconds?: number; lobby_bg_video?: string | null; lobby_auto_admit?: boolean;
           class_package_url?: string | null; created_at?: string | null;
+          risk_dimensions?: string[] | null;
         }>(`/api/rooms/${id}/public`),
       create: (body: Partial<Room>) =>
         call<Room>("/api/rooms", { method: "POST", body: JSON.stringify(body) }),
