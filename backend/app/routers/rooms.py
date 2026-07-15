@@ -131,7 +131,7 @@ async def room_by_guest_token(token: str):
     row = await pool().fetchrow(
         """SELECT r.id, r.title, r.status, r.lobby_enabled, r.lobby_timer_title,
                   r.lobby_timer_seconds, r.lobby_bg_video, r.lobby_auto_admit, r.require_email,
-                  r.allow_whiteboard_edit,
+                  r.allow_whiteboard_edit, r.created_at,
                   t.branding, t.name AS tenant_name, t.slug AS tenant_slug
            FROM video_rooms r LEFT JOIN tenants t ON t.id = r.tenant_id
            WHERE r.guest_token=$1""",
@@ -157,6 +157,7 @@ async def room_by_guest_token(token: str):
         "lobby_auto_admit": row["lobby_auto_admit"],
         "require_email": row["require_email"],
         "allow_whiteboard_edit": row["allow_whiteboard_edit"],
+        "created_at": row["created_at"],   # âncora do countdown do saguão (compartilhado)
         "branding": normalize_branding(row["branding"]),
         "tenant_name": row["tenant_name"],
         "scorm": _is_scorm(row["tenant_slug"]),
@@ -171,7 +172,7 @@ async def room_public(room_id: str):
     r = await pool().fetchrow(
         """SELECT r.title, r.require_email, r.allow_whiteboard_edit,
                   r.lobby_enabled, r.lobby_timer_title, r.lobby_timer_seconds,
-                  r.lobby_bg_video, r.lobby_auto_admit, r.class_package_url,
+                  r.lobby_bg_video, r.lobby_auto_admit, r.class_package_url, r.created_at,
                   t.branding, t.name AS tenant_name, t.slug AS tenant_slug
            FROM video_rooms r LEFT JOIN tenants t ON t.id = r.tenant_id WHERE r.id=$1""",
         room_id,
@@ -194,6 +195,7 @@ async def room_public(room_id: str):
             "lobby_bg_video": bg,
             "lobby_auto_admit": r["lobby_auto_admit"],
             "class_package_url": r["class_package_url"],
+            "created_at": r["created_at"],   # âncora do countdown do saguão (compartilhado)
             "scorm": _is_scorm(r["tenant_slug"])}
 
 

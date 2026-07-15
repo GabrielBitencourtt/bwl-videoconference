@@ -5,14 +5,21 @@ interface Props {
   roomTitle: string;
   timerTitle?: string | null;
   timerSeconds: number;
+  /** Âncora do countdown (ISO). Padrão = criação da sala: o tempo é COMPARTILHADO —
+   *  quem entra depois vê o tempo corrente restante, não reinicia. */
+  startedAt?: string | null;
   bgVideo?: string | null;
   badge?: string;
   denied?: boolean;
   onTimerEnd?: () => void;
 }
 
-export default function LobbyWaiting({ roomTitle, timerTitle, timerSeconds, bgVideo, badge = "Convidado", denied, onTimerEnd }: Props) {
-  const [left, setLeft] = useState(Math.max(0, timerSeconds || 0));
+export default function LobbyWaiting({ roomTitle, timerTitle, timerSeconds, startedAt, bgVideo, badge = "Convidado", denied, onTimerEnd }: Props) {
+  // Fim do saguão = âncora (criação da sala) + duração. Sem âncora, cai no "agora".
+  const startMs = startedAt ? new Date(startedAt).getTime() : Date.now();
+  const endMs = startMs + Math.max(0, timerSeconds || 0) * 1000;
+  const remaining = () => Math.max(0, Math.round((endMs - Date.now()) / 1000));
+  const [left, setLeft] = useState(remaining);
   const [muted, setMuted] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const firedRef = useRef(false);
@@ -40,18 +47,19 @@ export default function LobbyWaiting({ roomTitle, timerTitle, timerSeconds, bgVi
 
   useEffect(() => {
     if (!timerSeconds || timerSeconds <= 0) return;
-    const id = setInterval(() => {
-      setLeft((s) => {
-        if (s <= 1) {
-          clearInterval(id);
-          if (!firedRef.current) { firedRef.current = true; onTimerEnd?.(); }
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+    // Recalcula do anchor a cada tick (preciso e resiliente a suspensão da aba).
+    const tick = () => {
+      const rem = remaining();
+      setLeft(rem);
+      if (rem <= 0) {
+        clearInterval(id);
+        if (!firedRef.current) { firedRef.current = true; onTimerEnd?.(); }
+      }
+    };
+    const id = setInterval(tick, 1000);
+    tick();   // aplica na hora (aluno que entra depois já vê o tempo corrente)
     return () => clearInterval(id);
-  }, [timerSeconds]);
+  }, [timerSeconds, endMs]);
 
   const mm = String(Math.floor(left / 60)).padStart(2, "0");
   const ss = String(left % 60).padStart(2, "0");

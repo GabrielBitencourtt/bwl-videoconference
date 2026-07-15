@@ -249,6 +249,7 @@ function EmbedPage() {
         roomTitle={info?.title}
         timerTitle={info?.lobby_timer_title}
         timerSeconds={info?.lobby_timer_seconds}
+        startedAt={info?.created_at}
         bgVideo={info?.lobby_bg_video}
         denied={phase === "denied"}
         onTimerEnd={() => { if (info?.lobby_auto_admit) setPhase("room"); }}
@@ -329,6 +330,7 @@ function GuestPage() {
         roomTitle={room.title}
         timerTitle={room.lobby_timer_title}
         timerSeconds={room.lobby_timer_seconds}
+        startedAt={room.created_at}
         bgVideo={room.lobby_bg_video}
         denied={phase === "denied"}
         onTimerEnd={() => { if (room.lobby_auto_admit) setPhase("room"); }}
