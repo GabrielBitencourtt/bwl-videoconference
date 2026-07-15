@@ -834,7 +834,9 @@
    de microfone/câmera é 46×30 (raio 8) — o rótulo e o ▶ seguem a mesma altura. */
 /* margin-bottom ≈ altura do rótulo dos controles (label ~12px + gap 3px): faz o
    sequenciador alinhar com a LINHA DOS ÍCONES (topo), não com o centro do controle. */
-.vr-seq { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-bottom: 15px; }
+/* gap 14px = mesmo espaçamento do header-right (verde ↔ microfone), então o ▶ verde
+   fica equidistante do rótulo e do 1º botão vermelho. */
+.vr-seq { display: inline-flex; align-items: center; gap: 14px; flex: none; margin-bottom: 15px; }
 .vr-seq-label {
   height: 30px; padding: 0 12px; border-radius: 8px;
   background: var(--vr-surface-2); color: var(--vr-text);
