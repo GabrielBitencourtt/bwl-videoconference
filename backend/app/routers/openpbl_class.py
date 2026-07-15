@@ -567,6 +567,13 @@ async def set_stage(room_id: str, body: StageSet, user: CurrentUser = Depends(ge
 # resultado é cacheado por sala (1 varredura LRS/attendance a cada ~8s).
 _roster_cache: dict[str, tuple[float, dict]] = {}
 _ROSTER_TTL = 8.0
+# Status "grudento" (sticky) por sala. O verde/vermelho ao redor da webcam deve mudar
+# só com um sinal REAL (eventos do pacote → verde; package_exited → vermelho). Sem isto,
+# uma falha transitória do LRS ou da API de presença invertia a resposta e a borda
+# piscava. Guardamos o último status conhecido de cada aluno e a última lista de
+# registrados: quando uma chamada falha nesta rodada, mantemos o que já sabíamos.
+_roster_sticky: dict[str, dict[str, bool]] = {}      # room_id -> {email: in_package}
+_roster_registered: dict[str, set[str]] = {}         # room_id -> {emails registrados}
 
 
 @router.get("/{room_id}/openpbl/roster")
@@ -588,8 +595,11 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
     since_iso = room["created_at"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     lrs = settings.scorm_lrs_url.rstrip("/")
 
-    # Presença registrada na sessão (lista do Presentation/Students).
+    # Presença registrada na sessão (lista do Presentation/Students). Se a chamada
+    # falhar NESTA rodada, mantemos a última lista conhecida em vez de zerar — assim
+    # a badge de registrado e o fallback do status não somem por um hiccup de rede.
     registered_emails: set[str] = set()
+    reg_ok = False
     if cls and settings.openpbl_integration_apikey:
         try:
             async with httpx.AsyncClient(timeout=10) as c:
@@ -597,11 +607,16 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
                     f"{settings.openpbl_integration_url.rstrip('/')}/api/Presentation/Students/{cls['presentation_code']}",
                     headers={"Accept": "application/json", "apikey": settings.openpbl_integration_apikey})
                 if r.status_code == 200:
+                    reg_ok = True
                     for s in ((r.json() or {}).get("data") or []):
                         if s.get("email"):
                             registered_emails.add(s["email"].strip().lower())
         except Exception:
             pass
+    if reg_ok:
+        _roster_registered[room_id] = registered_emails
+    else:
+        registered_emails = _roster_registered.get(room_id, registered_emails)
 
     async def in_package(email: str) -> bool | None:
         """True/False pelo LRS; None = sem eventos na sessão (LRS pode atrasar)."""
@@ -625,11 +640,21 @@ async def class_roster(room_id: str, user: CurrentUser | None = Depends(optional
     emails = {(p["email"] or "").strip().lower(): None for p in parts
               if p["email"] and not p["is_staff"] and p["user_id"] != room["owner_id"]}
     flags = await asyncio.gather(*[in_package(e) for e in emails]) if emails else []
-    # Registrar presença SÓ é possível de dentro do pacote — então, sem eventos
-    # no LRS (None), o registro vale como evidência de pacote aberto. O LRS só
-    # rebaixa para vermelho quando mostrar package_exited (saiu depois).
-    in_pkg = {e: (f if f is not None else (e in registered_emails))
-              for e, f in zip(emails.keys(), flags)}
+    # Resolução grudenta: `flag` só é True/False quando o LRS deu um sinal DEFINITIVO
+    # (eventos do pacote / package_exited). Quando é None (LRS falhou ou ainda sem
+    # eventos) NÃO invertemos o status — mantemos o último conhecido; e só no 1º contato
+    # (sem histórico) o registro de presença vale como evidência de pacote aberto.
+    prev = _roster_sticky.get(room_id, {})
+
+    def _resolve(email: str, flag) -> bool:
+        if flag is not None:
+            return flag                       # sinal real do LRS → manda
+        if email in prev:
+            return prev[email]                # sem sinal: mantém o último status (anti-piscar)
+        return email in registered_emails     # 1º contato: registrado ⇒ presume no pacote
+
+    in_pkg = {e: _resolve(e, f) for e, f in zip(emails.keys(), flags)}
+    _roster_sticky[room_id] = in_pkg          # store limitado aos participantes atuais
 
     students = []
     for p in parts:

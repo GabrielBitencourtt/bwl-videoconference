@@ -1193,23 +1193,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" ref={presentElRef}>
                   <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
                   {showQuestionsArea && (
-                    <div className="vr-pbl-question">
-                      {revealedQuestions.length ? (
-                        <div className="vr-pbl-qcascade">
-                          {revealedQuestions.map((q, i) => (
-                            <div className="vr-pbl-qcard" key={i}>
-                              <span className="vr-pbl-qcard-num">{i + 1}</span>
-                              <span className="vr-pbl-qcard-text">{q}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
+                    revealedQuestions.length ? (
+                      <QuestionCascade items={revealedQuestions} total={plenaryTotal}
+                        label="Questão para reflexão" icon="💭" progress emphasize />
+                    ) : (
+                      <div className="vr-pbl-question">
                         <div className="vr-pbl-question-waiting">
                           Aguardando as questões do pacote…
                           <span>Reempacote a apresentação (tipo PRESENTATION) informando as questões de reflexão.</span>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )
                   )}
                 </div>
               ) : null
@@ -1222,16 +1216,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             ) : showQuestionsArea && plenaryQ?.list?.length ? (
               // Aluno na plenária: recebe as questões por dados e mostra a MESMA cascata.
               <div className="vr-pbl-present-big">
-                <div className="vr-pbl-question">
-                  <div className="vr-pbl-qcascade">
-                    {plenaryQ.list.map((q, i) => (
-                      <div className="vr-pbl-qcard" key={i}>
-                        <span className="vr-pbl-qcard-num">{i + 1}</span>
-                        <span className="vr-pbl-qcard-text">{q}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
+                  label="Questão para reflexão" icon="💭" progress emphasize />
               </div>
             ) : showPackage ? (
               // Aluno até antes da plenária: apresentação transmitida pelo host (screen-share).
@@ -1557,9 +1543,52 @@ function RiskChart({ roomId }: { roomId: string }) {
   );
 }
 
-/** Cascata das DIMENSÕES de risco (etapa "Análise situacional") — mesma animação das
- *  questões da plenária. As dimensões vêm do dimensionsId informado na criação da sala
- *  (via /risk-chart, liberado a qualquer participante). */
+/** Cascata de cards revelados progressivamente — usada nas questões da plenária e
+ *  nas dimensões de risco (Análise situacional). Facilitador e aluno renderizam o
+ *  MESMO componente (o aluno recebe a lista por dados), então a UI/animação fica num
+ *  só lugar. `progress` mostra os passos (●) no cabeçalho e `emphasize` realça o card
+ *  mais recente — ambos fazem sentido só na revelação progressiva (plenária). */
+function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false }: {
+  items: string[];
+  total?: number;
+  label?: string;
+  icon?: string;
+  progress?: boolean;
+  emphasize?: boolean;
+}) {
+  const count = items.length;
+  const tot = Math.max(total ?? count, count, 1);
+  return (
+    <div className="vr-pbl-question">
+      {label && (
+        <div className="vr-pbl-qhead">
+          <span className="vr-pbl-qhead-label">
+            {icon && <span className="vr-pbl-qhead-ico">{icon}</span>}{label}
+          </span>
+          {progress && tot > 1 && (
+            <span className="vr-pbl-qdots" aria-hidden="true">
+              {Array.from({ length: tot }).map((_, i) => (
+                <span className="vr-pbl-qdot" key={i} data-on={i < count ? "1" : undefined} />
+              ))}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="vr-pbl-qcascade">
+        {items.map((q, i) => (
+          <div className="vr-pbl-qcard" key={i} data-latest={emphasize && i === count - 1 ? "1" : undefined}>
+            <span className="vr-pbl-qcard-num">{i + 1}</span>
+            <span className="vr-pbl-qcard-text">{q}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). As dimensões vêm do
+ *  dimensionsId informado na criação da sala (via /risk-chart, liberado a qualquer
+ *  participante). Aparecem todas de uma vez → sem progresso/realce de "mais recente". */
 function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
   const sdk = useSDK();
   const [fetched, setFetched] = useState<string[]>([]);
@@ -1576,20 +1605,11 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
     return () => { alive = false; clearInterval(iv); };
   }, [roomId, hasRoomDims]);
   const dims = hasRoomDims ? (roomDims as string[]) : fetched;
-  return (
+  return dims.length ? (
+    <QuestionCascade items={dims} label="Dimensões de risco" icon="🎯" />
+  ) : (
     <div className="vr-pbl-question">
-      {dims.length ? (
-        <div className="vr-pbl-qcascade">
-          {dims.map((d, i) => (
-            <div className="vr-pbl-qcard" key={i}>
-              <span className="vr-pbl-qcard-num">{i + 1}</span>
-              <span className="vr-pbl-qcard-text">{d}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
-      )}
+      <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
     </div>
   );
 }
