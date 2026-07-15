@@ -88,8 +88,9 @@ async def create_room(
           (tenant_id, room_id, title, description, owner_id, max_participants, is_public, auto_record,
            lobby_enabled, lobby_timer_title, lobby_timer_seconds, lobby_bg_video, lobby_auto_admit,
            guest_token, allow_camera, allow_mic, allow_screen_share, allow_whiteboard_edit,
-           scheduled_at, external_ref, require_email, openpbl_activity_id, openpbl_dimensions_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+           scheduled_at, external_ref, require_email, openpbl_activity_id, openpbl_dimensions_id,
+           class_package_url)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
         RETURNING *
         """,
         tenant_id, room_id, body.title, body.description, user.id, max_participants, body.is_public,
@@ -100,7 +101,7 @@ async def create_room(
         body.lobby_bg_video, body.lobby_auto_admit, guest_token,
         body.allow_camera, body.allow_mic, body.allow_screen_share, False,
         body.scheduled_at, body.external_ref, body.require_email, body.openpbl_activity_id,
-        body.openpbl_dimensions_id,
+        body.openpbl_dimensions_id, (body.class_package_url or None),
     )
     return _row_to_room(row)
 
@@ -170,7 +171,7 @@ async def room_public(room_id: str):
     r = await pool().fetchrow(
         """SELECT r.title, r.require_email, r.allow_whiteboard_edit,
                   r.lobby_enabled, r.lobby_timer_title, r.lobby_timer_seconds,
-                  r.lobby_bg_video, r.lobby_auto_admit,
+                  r.lobby_bg_video, r.lobby_auto_admit, r.class_package_url,
                   t.branding, t.name AS tenant_name, t.slug AS tenant_slug
            FROM video_rooms r LEFT JOIN tenants t ON t.id = r.tenant_id WHERE r.id=$1""",
         room_id,
@@ -192,6 +193,7 @@ async def room_public(room_id: str):
             "lobby_timer_seconds": r["lobby_timer_seconds"],
             "lobby_bg_video": bg,
             "lobby_auto_admit": r["lobby_auto_admit"],
+            "class_package_url": r["class_package_url"],
             "scorm": _is_scorm(r["tenant_slug"])}
 
 

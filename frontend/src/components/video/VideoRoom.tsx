@@ -4,6 +4,7 @@ import {
   useTracks, useParticipants, useTrackToggle, useRoomContext, useLocalParticipant,
 } from "@livekit/components-react";
 import { Track, RoomEvent, Room } from "livekit-client";
+import { QRCodeSVG } from "qrcode.react";
 import "@livekit/components-styles";
 import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
@@ -66,6 +67,7 @@ const I = {
   expand: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>,
   copy: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
   playTri: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"><path d="M7 5.5v13l11-6.5z"/></svg>,
+  qr: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7M17 21h4"/></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
 };
 
@@ -584,6 +586,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
+  const [packageUrl, setPackageUrl] = useState<string | null>(null);  // URL do Pacote de Classe → QR code
+  const [qrOpen, setQrOpen] = useState(false);
 
   // ── Papéis de sessão: moderadores (poderes de host), controlador (dirige o
   //    sequenciador — "assumir controle") e câmera fixada na área de conteúdo. ──
@@ -627,6 +631,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       setPubTitle(r.title || "");
       setScorm(!!(r as any).scorm);
       setBoardEdit(!!(r as any).allow_whiteboard_edit);   // padrão da sala
+      setPackageUrl((r as any).class_package_url || null);
       applyBranding(r.branding as Branding);
     }).catch(() => {});
   }, [roomId]);
@@ -1128,6 +1133,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             onToggleBoard={toggleBoard}
             recording={recording}
             onToggleRecording={toggleRecording}
+            showQr={!!packageUrl}
+            onQr={() => setQrOpen(true)}
           />
           <div className="vr-meta">
             {recording && <span className="vr-rec">REC</span>}
@@ -1299,6 +1306,24 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               <button className="vr-modal-btn" onClick={() => setConfirmEnd(false)}>Cancelar</button>
               <button className="vr-modal-btn vr-modal-btn-danger" onClick={doEndRoom}>Encerrar sala</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR code do Pacote de Classe: o aluno escaneia (celular) ou clica em "Abrir
+          pacote" (navegador). Gerado da URL informada na criação da sala. */}
+      {qrOpen && packageUrl && (
+        <div className="vr-modal-backdrop" onClick={() => setQrOpen(false)}>
+          <div className="vr-modal vr-qr-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="vr-sheet-close" onClick={() => setQrOpen(false)} aria-label="Fechar">✕</button>
+            <h3>Pacote da atividade</h3>
+            <p>Aponte a câmera do celular para o QR code para abrir o pacote.</p>
+            <div className="vr-qr-code">
+              <QRCodeSVG value={packageUrl} size={240} includeMargin level="M" />
+            </div>
+            <a className="vr-modal-btn vr-modal-btn-primary" href={packageUrl} target="_blank" rel="noopener noreferrer">
+              Abrir pacote no navegador
+            </a>
           </div>
         </div>
       )}
@@ -2149,18 +2174,19 @@ function ScormPanel({ roomId }: { roomId: string }) {
 }
 
 /* ---------------- Controls ---------------- */
-function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsActive, peopleCount, boardActive, onToggleBoard, recording, onToggleRecording }: {
+function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsActive, peopleCount, boardActive, onToggleBoard, recording, onToggleRecording, showQr, onQr }: {
   isStaff: boolean; scorm: boolean; panel: string | null;
   setPanel: (p: "chat" | "people" | "breakout" | "scorm" | null) => void;
   onOpenSettings: () => void; settingsActive: boolean;
   peopleCount: number; boardActive: boolean; onToggleBoard: () => void;
   recording: boolean; onToggleRecording: () => void;
+  showQr?: boolean; onQr?: () => void;
 }) {
   const mic = useTrackToggle({ source: Track.Source.Microphone });
   const cam = useTrackToggle({ source: Track.Source.Camera });
   const room = useRoomContext();
 
-  // Barra enxuta: só microfone, câmera, chat e sair (encerrar sala fica no topo).
+  // Barra enxuta: microfone, câmera, chat, pacote (QR) e sair.
   return (
     <div className="vr-controls">
       <Ctrl label="Microfone" icon={mic.enabled ? I.mic : I.micOff} title={mic.enabled ? "Desligar microfone" : "Ligar microfone"}
@@ -2172,6 +2198,10 @@ function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsA
 
       <Ctrl label="Chat" icon={I.chat} active={panel === "chat"}
         onClick={() => setPanel(panel === "chat" ? null : "chat")} />
+      {showQr && (
+        <Ctrl label="Pacote" icon={I.qr} title="Abrir o QR code do pacote da atividade"
+          onClick={() => onQr?.()} />
+      )}
 
       <div className="vr-sep" />
 
