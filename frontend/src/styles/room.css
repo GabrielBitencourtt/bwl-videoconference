@@ -830,24 +830,26 @@
 }
 .vr-actbar-ghost:hover { color: var(--vr-text); border-color: var(--brand-accent); }
 
-/* Sequenciador no header (direita), no estilo dos controles: rótulo escuro + ▶ verde,
-   alinhado com os botões de microfone/câmera/chat/sair. */
-.vr-seq { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+/* Sequenciador no header (direita), no MESMO tamanho dos controles: a caixa dos ícones
+   de microfone/câmera é 46×30 (raio 8) — o rótulo e o ▶ seguem a mesma altura. */
+/* margin-bottom ≈ altura do rótulo dos controles (label ~12px + gap 3px): faz o
+   sequenciador alinhar com a LINHA DOS ÍCONES (topo), não com o centro do controle. */
+.vr-seq { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-bottom: 15px; }
 .vr-seq-label {
-  height: 42px; padding: 0 16px; border-radius: 10px;
+  height: 30px; padding: 0 12px; border-radius: 8px;
   background: var(--vr-surface-2); color: var(--vr-text);
-  border: 1px solid var(--vr-border); font-size: 13px; font-weight: 700;
+  border: 1px solid var(--vr-border); font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s;
 }
 .vr-seq-label:hover { border-color: var(--brand-accent); }
 .vr-seq-label:disabled { opacity: .6; cursor: default; }
 .vr-seq-go {
-  display: grid; place-items: center; width: 42px; height: 42px; border-radius: 10px;
+  display: grid; place-items: center; width: 46px; height: 30px; border-radius: 8px;
   background: #22c55e; border: none; color: #fff; cursor: pointer; transition: background .15s;
 }
 .vr-seq-go:hover { background: #16a34a; }
 .vr-seq-go:disabled { opacity: .6; cursor: default; }
-.vr-seq-go svg { width: 20px; height: 20px; }
+.vr-seq-go svg { width: 18px; height: 18px; }
 /* Última tarefa = Encerrar a sala: rótulo vermelho. */
 .vr-seq[data-danger] .vr-seq-label { background: var(--vr-danger); color: #fff; border-color: var(--vr-danger); }
 .vr-seq[data-danger] .vr-seq-label:hover { background: #dc2626; }
