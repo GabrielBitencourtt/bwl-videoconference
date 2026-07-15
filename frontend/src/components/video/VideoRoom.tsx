@@ -630,7 +630,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       const d = e.data;
       if (!d || d.source !== "openpbl-package") return;
       // DEBUG: confirma que as mensagens da ponte chegam (ver no console do webconf).
-      try { console.debug("[openpbl-msg]", d.type, d.type === "questions" ? (d.list?.length ?? 0) : (d.label || "")); } catch { /* */ }
+      try { console.log("[openpbl-msg]", d.type, d.type === "questions" ? (d.list?.length ?? 0) : (d.label || "")); } catch { /* */ }
       if (d.type === "step" && typeof d.label === "string") {
         setPblStep(d.label);
         // Corpo do slide = texto da questão provocadora (fallback do overlay se a
@@ -960,6 +960,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // screen-share (o aluno passa a ver as questões por dados).
           if (breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});
           if (presenting) await togglePresent().catch(() => {});
+          presentationPost("next");   // avança o pacote (mantém a ponte na posição do carousel)
           await goToStep(next);
           break;
         case "question": {
@@ -1133,32 +1134,31 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 !chartHidden ? (
                   <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
                 ) : null
-              ) : showQuestionsArea ? (
-                // Plenária: SÓ as questões (o pacote some para todos).
-                <div className="vr-pbl-present-big">
-                  <div className="vr-pbl-question">
-                    {revealedQuestions.length ? (
-                      <div className="vr-pbl-qcascade">
-                        {revealedQuestions.map((q, i) => (
-                          <div className="vr-pbl-qcard" key={i}>
-                            <span className="vr-pbl-qcard-num">{i + 1}</span>
-                            <span className="vr-pbl-qcard-text">{q}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="vr-pbl-question-waiting">
-                        Aguardando as questões do pacote…
-                        <span>Reempacote a apresentação (tipo PRESENTATION) informando as questões de reflexão.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : showPackage ? (
-                // Até a etapa anterior à plenária: o pacote embutido (recorte transmitido
-                // aos alunos via screen-share). presentElRef = alvo do recorte.
+              ) : (showPackage || showQuestionsArea) ? (
+                // Até a plenária: o pacote embutido (recorte transmitido aos alunos). Na
+                // plenária ele fica MONTADO POR BAIXO (a ponte segue viva enviando as
+                // questões) e a cascata cobre por cima → o pacote some visualmente.
                 <div className="vr-pbl-present-big" ref={presentElRef}>
                   <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
+                  {showQuestionsArea && (
+                    <div className="vr-pbl-question">
+                      {revealedQuestions.length ? (
+                        <div className="vr-pbl-qcascade">
+                          {revealedQuestions.map((q, i) => (
+                            <div className="vr-pbl-qcard" key={i}>
+                              <span className="vr-pbl-qcard-num">{i + 1}</span>
+                              <span className="vr-pbl-qcard-text">{q}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="vr-pbl-question-waiting">
+                          Aguardando as questões do pacote…
+                          <span>Reempacote a apresentação (tipo PRESENTATION) informando as questões de reflexão.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : null
             ) : showQuestionsArea && plenaryQ?.list?.length ? (
