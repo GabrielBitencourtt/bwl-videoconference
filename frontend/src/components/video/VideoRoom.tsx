@@ -908,6 +908,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     try {
       switch (id) {
         case "session_start":
+          // Inicia o screen-share RECORTADO só na área do pacote (presentElRef) — assim
+          // os alunos têm a visão EXATA do pacote de apresentação. É o 1º clique do
+          // sequenciador (gesto do usuário exigido pelo getDisplayMedia); vem antes do
+          // startClass p/ preservar o gesto.
+          if (!presenting) await togglePresent();
           if (!pblClass?.active && pblRoster?.activity_id) await sdk.openpbl.startClass(roomId, pblRoster.activity_id).catch(() => {});
           presentationPost("next");
           await goToStep(next);
@@ -1046,10 +1051,16 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             </button>
           )}
           {pblHost && (
-            <button className="vr-actbar-seq" data-danger={pblStage === "done" || undefined} onClick={runStep} disabled={stageBusy} title={seqLabel}>
-              <span className="vr-actbar-seq-label">{stageBusy ? "…" : seqLabel}</span>
-              {pblStage !== "done" && I.playTri}
-            </button>
+            <div className="vr-seq" data-danger={pblStage === "done" || undefined}>
+              <button className="vr-seq-label" onClick={runStep} disabled={stageBusy} title={seqLabel}>
+                {stageBusy ? "…" : seqLabel}
+              </button>
+              {pblStage !== "done" && (
+                <button className="vr-seq-go" onClick={runStep} disabled={stageBusy} title="Executar a etapa e avançar">
+                  {I.playTri}
+                </button>
+              )}
+            </div>
           )}
           <ControlBar
             isStaff={isStaff}
