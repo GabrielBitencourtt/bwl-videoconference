@@ -854,6 +854,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     ? `Questão para reflexão (${Math.min(qCount + 1, plenaryTotal)}/${plenaryTotal})`
     : curStep.action;
 
+  // Class-code só é liberado (mostrado ao facilitador) DEPOIS de clicar em "Iniciar o
+  // registro" — ou seja, a partir da etapa de "Encerrar o registro" (registro aberto).
+  const codeReleased = !!classCode && stepIndex(pblStage) >= stepIndex("registration_close");
+
   // Relógio (HH:MM) no header do facilitador, ao lado do class-code. Atualiza a cada 20s.
   useEffect(() => {
     const tick = () => {
@@ -913,11 +917,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           presentationPost("next");
           await goToStep(next);
           break;
-        case "amplify_code":
-          // Pop-up do código AMPLIADO e copiável, transmitido para todos os presentes.
-          setCodeExpand(true); if (isStaff) broadcastCodeExpand(true);
-          await goToStep(next);
-          break;
         case "registration_close":
           await sdk.openpbl.closeRegistration(roomId).catch(() => {});
           await sdk.openpbl.syncGroups(roomId).catch(() => {});
@@ -975,6 +974,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await goToStep(next);
           break;
         case "done":
+          // Última tarefa do sequenciador: abre o confirm de ENCERRAR A SALA (não avança).
+          setConfirmEnd(true);
           break;
       }
     } finally { setStageBusy(false); }
@@ -987,24 +988,28 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           {brand?.logo_url
             ? <img className="vr-logo vr-logo-img" src={brand.logo_url} alt="" />
             : <div className="vr-logo">V</div>}
-          {/* Facilitador na aula OpenPBL: em vez do nome da sala, mostra o horário e o
-              class-code lado a lado (copiar + ocultar p/ alunos). */}
-          {pblHost && classCode ? (
+          {/* Facilitador na aula OpenPBL: em vez do nome da sala, mostra o horário; o
+              class-code só aparece DEPOIS de iniciar o registro (codeReleased). */}
+          {pblHost ? (
             <div className="vr-brandmeta">
               <span className="vr-clock">{clock}</span>
-              <span className="vr-brandmeta-sep">|</span>
-              {/* Class-code como TEXTO puro (mesma fonte do relógio), sem box e sem o
-                  rótulo "Class code" — segue clicável (copia + amplia) com o ícone ao lado. */}
-              <button type="button" className="vr-code-plain" onClick={onCodeChipClick} title="Clique para copiar e ampliar o código">
-                <span className="vr-clock">{codeCopied ? "Copiado!" : classCode}</span>
-                <span className="vr-code-plain-ico" aria-hidden>{I.copy}</span>
-              </button>
-              <button
-                type="button" className="vr-code-plain-eye" onClick={toggleCodeForStudents}
-                title={codeHiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
-              >
-                {codeHiddenForStudents ? I.eyeOff : I.eye}
-              </button>
+              {codeReleased && (
+                <>
+                  <span className="vr-brandmeta-sep">|</span>
+                  {/* Class-code como TEXTO puro (mesma fonte do relógio), sem box e sem o
+                      rótulo "Class code" — clicável (copia + amplia) com o ícone ao lado. */}
+                  <button type="button" className="vr-code-plain" onClick={onCodeChipClick} title="Clique para copiar e ampliar o código">
+                    <span className="vr-clock">{codeCopied ? "Copiado!" : classCode}</span>
+                    <span className="vr-code-plain-ico" aria-hidden>{I.copy}</span>
+                  </button>
+                  <button
+                    type="button" className="vr-code-plain-eye" onClick={toggleCodeForStudents}
+                    title={codeHiddenForStudents ? "Mostrar o código para os alunos" : "Ocultar o código para os alunos"}
+                  >
+                    {codeHiddenForStudents ? I.eyeOff : I.eye}
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="vr-title">{roomTitle || pubTitle || brand?.product_name || "Sala de vídeo"}</div>
@@ -1040,10 +1045,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               {chartHidden ? "Mostrar gráfico" : "Ocultar gráfico"}
             </button>
           )}
-          {pblHost && pblStage !== "done" && (
-            <button className="vr-actbar-seq" onClick={runStep} disabled={stageBusy} title={seqLabel}>
+          {pblHost && (
+            <button className="vr-actbar-seq" data-danger={pblStage === "done" || undefined} onClick={runStep} disabled={stageBusy} title={seqLabel}>
               <span className="vr-actbar-seq-label">{stageBusy ? "…" : seqLabel}</span>
-              {I.playTri}
+              {pblStage !== "done" && I.playTri}
             </button>
           )}
           <ControlBar
@@ -1061,8 +1066,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           />
           <div className="vr-meta">
             {recording && <span className="vr-rec">REC</span>}
-            {/* Encerrar sala: exclusivo do facilitador (host). */}
-            {isStaff && (
+            {/* Encerrar sala: fora do OpenPBL, botão dedicado. No OpenPBL ele vira a
+                ÚLTIMA tarefa do sequenciador (etapa "done"). */}
+            {isStaff && !pblHost && (
               <button className="vr-end-btn" onClick={() => setConfirmEnd(true)} title="Encerrar a sala para todos">Encerrar sala</button>
             )}
           </div>
@@ -1316,7 +1322,6 @@ interface StepDef { id: OpenPblStage; action: string; head: string; }
 const STEPS: StepDef[] = [
   { id: "session_start",      action: "Iniciar a sessão",                     head: "Pré-atividades" },
   { id: "registration_open",  action: "Iniciar o registro",                   head: "Registro de Presença" },
-  { id: "amplify_code",       action: "Ampliar código da sessão",             head: "Registro de Presença" },
   { id: "registration_close", action: "Encerrar o registro",                  head: "Registro de Presença" },
   { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
   { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
@@ -1325,7 +1330,7 @@ const STEPS: StepDef[] = [
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
   { id: "closing",            action: "Encerramento",                         head: "Análise situacional" },
   { id: "release_feedback",   action: "Liberar feedback de interação",        head: "Feedback e encerramento" },
-  { id: "done",               action: "Encontro concluído",                   head: "Encontro concluído" },
+  { id: "done",               action: "Encerrar a sala",                      head: "Encerramento" },
 ];
 const STEP_IDS = STEPS.map((s) => s.id);
 const stepIndex = (id: OpenPblStage) => STEP_IDS.indexOf(id);

@@ -811,6 +811,9 @@
 }
 .vr-actbar-seq:hover { background: #16a34a; }
 .vr-actbar-seq:disabled { opacity: .6; cursor: default; }
+/* Última tarefa = Encerrar a sala: destaque vermelho (ação destrutiva). */
+.vr-actbar-seq[data-danger] { background: var(--vr-danger); }
+.vr-actbar-seq[data-danger]:hover { background: #dc2626; }
 .vr-actbar-seq svg { width: 18px; height: 18px; flex: none; }
 .vr-actbar-seq-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
 .vr-actbar-present {
