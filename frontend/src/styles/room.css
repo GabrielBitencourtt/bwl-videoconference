@@ -787,9 +787,8 @@
 /* Vive no header: `margin: 0 auto` a centra entre a marca e os controles. */
 .vr-actbar {
   display: flex; align-items: center; gap: 12px; align-self: center; flex: none;
-  margin: 0 auto; padding: 6px 8px 6px 16px;
-  background: var(--vr-surface); border: 1px solid var(--vr-border); border-radius: 12px;
-  box-shadow: var(--vr-shadow);
+  margin: 0 auto; padding: 0;
+  background: none; border: none; box-shadow: none;
 }
 .vr-actbar-info { display: flex; flex-direction: column; line-height: 1.1; min-width: 168px; }
 /* Etapa atual em destaque: fonte bem maior que a antiga (14px). */
