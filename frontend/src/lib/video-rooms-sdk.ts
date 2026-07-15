@@ -112,6 +112,7 @@ export type OpenPblStage =
   | "question"            // Questão para reflexão (×5)
   | "situational"         // Análise situacional
   | "release_risks"       // Liberar análise individual de riscos
+  | "show_chart"          // Mostrar gráfico (também para os alunos)
   | "closing"             // Encerramento
   | "release_feedback"    // Liberar feedback de interação
   | "done";               // Encontro concluído

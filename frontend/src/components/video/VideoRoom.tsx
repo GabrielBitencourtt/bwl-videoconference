@@ -789,12 +789,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const pblStage: OpenPblStage = STEP_IDS.includes(rawStage) ? rawStage : "session_start";
   const curStep = stepDef(pblStage);
   // Visibilidade da ÁREA DE CONTEÚDO por etapa:
-  //  - até ANTES da plenária (question): mostra o PACOTE (recorte transmitido aos alunos);
-  //  - na plenária (question): mostra só as QUESTÕES (o pacote some para todos);
-  //  - da Análise situacional em diante: facilitador vê só o GRÁFICO; aluno não vê nada.
+  //  - até ANTES da plenária (question): PACOTE (recorte transmitido aos alunos);
+  //  - plenária (question): QUESTÕES (pacote some para todos);
+  //  - Análise situacional (situational): cascata das DIMENSÕES de risco (todos);
+  //  - a partir de "Liberar análise de riscos" (release_risks): GRÁFICO p/ host/moderador;
+  //  - "Mostrar gráfico" (show_chart) em diante: GRÁFICO também para os alunos.
   const showPackage = stepIndex(pblStage) < stepIndex("question");
   const showQuestionsArea = pblStage === "question";
-  const chartAvailable = stepIndex(pblStage) >= stepIndex("situational");
+  const showDimensions = pblStage === "situational";
+  const chartForStaff = stepIndex(pblStage) >= stepIndex("release_risks");
+  const chartForStudents = stepIndex(pblStage) >= stepIndex("show_chart");
+  const chartAvailable = chartForStaff;   // toggle do gráfico (host/moderador)
 
   // A apresentação fica SEMPRE no frame ao lado da câmera do facilitador e da grade
   // de alunos — nunca ocupa a tela inteira (nem na plenária/questões).
@@ -1029,6 +1034,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await sdk.openpbl.release(roomId, "risks").catch(() => {});
           await goToStep(next);
           break;
+        case "show_chart":
+          // Passa a exibir o gráfico também para os alunos (só muda a etapa).
+          await goToStep(next);
+          break;
         case "closing":
           if (recording) { setRecording(false); await sdk.recording.stop(roomId).catch(() => setRecording(true)); }
           presentationPost("next");
@@ -1167,11 +1176,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           <aside className="vr-pbl-side">
             <PblPanelHeader roster={pblRoster} localIsStaff={amStaff} localIdentity={identity} pinned={pinned} />
             {amStaff ? (
-              chartAvailable ? (
-                // Análise situacional em diante: SÓ o gráfico radar (ocultável). Sem pacote.
+              chartForStaff ? (
+                // "Liberar análise de riscos" em diante: SÓ o gráfico (ocultável).
                 !chartHidden ? (
                   <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
                 ) : null
+              ) : showDimensions ? (
+                // Análise situacional: cascata das DIMENSÕES de risco (injetadas na sala).
+                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
               ) : (showPackage || showQuestionsArea) ? (
                 // Até a plenária: o pacote embutido (recorte transmitido aos alunos). Na
                 // plenária ele fica MONTADO POR BAIXO (a ponte segue viva enviando as
@@ -1199,6 +1211,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   )}
                 </div>
               ) : null
+            ) : chartForStudents ? (
+              // "Mostrar gráfico" em diante: o aluno também vê o gráfico.
+              <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
+            ) : showDimensions ? (
+              // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
+              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
             ) : showQuestionsArea && plenaryQ?.list?.length ? (
               // Aluno na plenária: recebe as questões por dados e mostra a MESMA cascata.
               <div className="vr-pbl-present-big">
@@ -1217,7 +1235,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               // Aluno até antes da plenária: apresentação transmitida pelo host (screen-share).
               <StudentPresentation />
             ) : (
-              // Análise situacional em diante: nada na área de conteúdo do aluno.
+              // release_risks (antes de "Mostrar gráfico"): nada para o aluno.
               null
             )}
           </aside>
@@ -1422,6 +1440,7 @@ const STEPS: StepDef[] = [
   { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
   { id: "situational",        action: "Análise situacional",                  head: "Plenária" },
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
+  { id: "show_chart",         action: "Mostrar gráfico",                      head: "Análise situacional" },
   { id: "closing",            action: "Encerramento",                         head: "Análise situacional" },
   { id: "release_feedback",   action: "Liberar feedback de interação",        head: "Feedback e encerramento" },
   { id: "done",               action: "Encerrar a sala",                      head: "Encerramento" },
@@ -1536,12 +1555,51 @@ function RiskChart({ roomId }: { roomId: string }) {
   );
 }
 
+/** Cascata das DIMENSÕES de risco (etapa "Análise situacional") — mesma animação das
+ *  questões da plenária. As dimensões vêm do dimensionsId informado na criação da sala
+ *  (via /risk-chart, liberado a qualquer participante). */
+function RiskDimensions({ roomId }: { roomId: string }) {
+  const sdk = useSDK();
+  const [dims, setDims] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () => sdk.openpbl.riskChart(roomId).then((r: any) => {
+      const d = r?.chart?.dimensions;
+      if (alive && Array.isArray(d) && d.length) setDims(d);
+    }).catch(() => {});
+    load();
+    const iv = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [roomId]);
+  return (
+    <div className="vr-pbl-question">
+      {dims.length ? (
+        <div className="vr-pbl-qcascade">
+          {dims.map((d, i) => (
+            <div className="vr-pbl-qcard" key={i}>
+              <span className="vr-pbl-qcard-num">{i + 1}</span>
+              <span className="vr-pbl-qcard-text">{d}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
+      )}
+    </div>
+  );
+}
+
 function RadarSvg({ dims, series, max, answered, total }: {
   dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
   answered: number[]; total: number;
 }) {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
+  // Legenda vira FILTRO: clicar oculta/mostra a série. `vis` = séries visíveis.
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const vis = series.filter((s) => !hidden.has(s.name));
+  const toggleSeries = (name: string) =>
+    setHidden((h) => { const n = new Set(h); n.has(name) ? n.delete(name) : n.add(name); return n; });
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
   const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 72;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
@@ -1575,12 +1633,12 @@ function RadarSvg({ dims, series, max, answered, total }: {
             </g>
           );
         })}
-        {series.map((s, si) => (
+        {vis.map((s, si) => (
           <polygon key={si} className="vr-radar-series" points={poly(s.values)}
             style={{ stroke: s.color, fill: s.color, fillOpacity: hover === null ? 0.12 : 0.06 }} />
         ))}
         {/* vértice destacado na dimensão sob o mouse */}
-        {hover !== null && series.map((s, si) => {
+        {hover !== null && vis.map((s, si) => {
           const [px, py] = point(hover, s.values[hover] ?? 0);
           return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
         })}
@@ -1593,7 +1651,7 @@ function RadarSvg({ dims, series, max, answered, total }: {
         {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
         {hover !== null && (() => {
           const [ox, oy] = point(hover, max);
-          const w = 176, h = 60 + series.length * 15;
+          const w = 176, h = 60 + Math.max(1, vis.length) * 15;
           const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
           const y = Math.max(4, Math.min(size - h - 4, oy - h / 2));
           return (
@@ -1601,7 +1659,7 @@ function RadarSvg({ dims, series, max, answered, total }: {
               <div className="vr-radar-tip">
                 <div className="vr-radar-tip-h">{dims[hover]}</div>
                 <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
-                {series.map((s) => (
+                {vis.map((s) => (
                   <div key={s.name} className="vr-radar-tip-row">
                     <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
                     <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
@@ -1614,7 +1672,10 @@ function RadarSvg({ dims, series, max, answered, total }: {
       </svg>
       <div className="vr-radar-legend">
         {series.map((s) => (
-          <span key={s.name} className="vr-radar-leg"><i style={{ background: s.color }} />{s.name}</span>
+          <button key={s.name} type="button" className="vr-radar-leg" data-off={hidden.has(s.name) || undefined}
+            onClick={() => toggleSeries(s.name)} title="Clique para mostrar/ocultar esta série">
+            <i style={{ background: s.color }} />{s.name}
+          </button>
         ))}
       </div>
     </div>

@@ -31,6 +31,7 @@
 
 /* ---------- Header ---------- */
 .vr-header {
+  position: relative;   /* âncora p/ centralizar a etapa (vr-actbar) no header */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -51,7 +52,7 @@
 .vr-title { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Facilitador OpenPBL: horário + class-code no lugar do nome da sala. */
 .vr-brandmeta { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.vr-clock { font-size: 15px; font-weight: 700; color: var(--vr-text); font-variant-numeric: tabular-nums; letter-spacing: .3px; }
+.vr-clock { font-size: 19px; font-weight: 500; color: var(--vr-text); font-variant-numeric: tabular-nums; letter-spacing: .3px; }
 .vr-brandmeta-sep { color: var(--vr-text-dim); opacity: .55; }
 /* Class-code como texto puro (sem box), clicável, com o ícone de copiar ao lado. */
 .vr-code-plain {
@@ -361,7 +362,7 @@
   .vr-header-right { order: 2; }
   /* Sequenciador: info na 1ª linha, ação + ▶ na 2ª — largura travada no container
      (box-sizing) e ação encolhível para o ▶ nunca cortar na borda. */
-  .vr-actbar { order: 3; flex: 0 0 100%; width: 100%; box-sizing: border-box; max-width: 100%; margin: 4px 0 0; padding: 8px 12px; flex-wrap: wrap; }
+  .vr-actbar { position: static; transform: none; order: 3; flex: 0 0 100%; width: 100%; box-sizing: border-box; max-width: 100%; margin: 4px 0 0; padding: 8px 12px; flex-wrap: wrap; }
   .vr-actbar-info { min-width: 0; flex: 1 1 100%; }
   .vr-actbar-name { font-size: 17px; }
   .vr-actbar-present { flex: 1 1 auto; min-width: 0; }
@@ -483,7 +484,7 @@
 .vr-bo-chip[data-active="true"] { background: linear-gradient(135deg, var(--brand-accent), var(--brand-accent-hover)); border-color: transparent; color: #fff; }
 .vr-bo-chip-n { background: rgba(255,255,255,.18); border-radius: 999px; padding: 0 6px; font-size: 11px; }
 .vr-bo-chip:not([data-active="true"]) .vr-bo-chip-n { background: var(--vr-border); color: var(--vr-text-dim); }
-.vr-bo-hostbar-timer { font-size: 12px; color: var(--vr-text-dim); font-weight: 600; margin-left: auto; }
+.vr-bo-hostbar-timer { font-size: 22px; color: var(--vr-text); font-weight: 700; margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: .5px; }
 .vr-bo-hostbar-msg { font-size: 12px; color: var(--brand-accent-hover); }
 
 /* "Sala do facilitador": overview que substitui a apresentação enquanto os grupos
@@ -795,10 +796,12 @@
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
 /* Vive no header: `margin: 0 auto` a centra entre a marca e os controles. */
 .vr-actbar {
-  display: flex; align-items: center; gap: 12px; align-self: center; flex: none;
-  margin: 0 auto; padding: 0;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 12px; flex: none;
+  margin: 0; padding: 0;
   background: none; border: none; box-shadow: none;
 }
+.vr-actbar-name { text-align: center; }
 .vr-actbar-info { display: flex; flex-direction: column; line-height: 1.1; min-width: 168px; }
 /* Etapa atual em destaque: fonte bem maior que a antiga (14px). */
 .vr-actbar-name { font-size: 20px; font-weight: 800; letter-spacing: -.2px; color: var(--vr-text); }
@@ -939,7 +942,15 @@
 .vr-radar-tip-n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vr-radar-tip-row b { flex: none; margin-left: 6px; }
 .vr-radar-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; margin-top: 8px; font-size: 11px; }
-.vr-radar-leg { display: inline-flex; align-items: center; gap: 5px; color: #334155; }
+/* Legenda = FILTRO: cada item é um botão que mostra/oculta a série no radar. */
+.vr-radar-leg {
+  display: inline-flex; align-items: center; gap: 5px; color: #334155;
+  background: none; border: 1px solid transparent; cursor: pointer; font: inherit;
+  padding: 3px 7px; border-radius: 999px; transition: background .12s, opacity .12s;
+}
+.vr-radar-leg:hover { background: #f1f5f9; border-color: #e2e8f0; }
+.vr-radar-leg[data-off] { opacity: .4; }
+.vr-radar-leg[data-off] i { filter: grayscale(1); }
 .vr-radar-leg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
 
 /* Área principal OpenPBL: apresentação à ESQUERDA + webcams dos alunos à DIREITA */

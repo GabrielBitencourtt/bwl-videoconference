@@ -439,11 +439,11 @@ _CHART_TTL = 4.0
 
 
 @router.get("/{room_id}/openpbl/risk-chart")
-async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)):
+async def risk_chart(room_id: str, user: CurrentUser | None = Depends(optional_user)):
     """Radar do Questionário de Riscos agregado pelos GRUPOS DA WEBCONF (os grupos
     do pacote não batem com os nossos). Busca as respostas individuais
-    (`performance/{studentId}/{dims}`) e média por grupo + contagem de quem respondeu."""
-    await _require_host(user)
+    (`performance/{studentId}/{dims}`) e média por grupo + contagem de quem respondeu.
+    Liberado a qualquer participante (o aluno também vê o gráfico na etapa 'Mostrar Gráfico')."""
     cls = await _get_class(room_id)
     if not cls:
         return {"available": False, "reason": "class_not_started"}
@@ -535,7 +535,7 @@ async def risk_chart(room_id: str, user: CurrentUser = Depends(get_current_user)
 _STAGES = (
     "session_start", "registration_open", "amplify_code", "registration_close",
     "groups", "plenary", "question", "situational",
-    "release_risks", "closing", "release_feedback", "done",
+    "release_risks", "show_chart", "closing", "release_feedback", "done",
 )
 
 
