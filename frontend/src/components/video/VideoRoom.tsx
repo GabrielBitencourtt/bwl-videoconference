@@ -699,16 +699,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // da própria aba (Region Capture). O iframe do play2 é cross-origin e não pode
   // ser capturado direto, mas o recorte da aba funciona por cima dele — o aluno
   // recebe como um screen-share comum (cai no spotlight da grade).
-  const togglePresent = async () => {
+  // Retorna true se a transmissão FICOU ATIVA (iniciou), false se parou/cancelou/falhou.
+  const togglePresent = async (): Promise<boolean> => {
     if (presenting) {
       const t = presentTrackRef.current;
       if (t) { try { await room.localParticipant.unpublishTrack(t as any); } catch { /* */ } t.stop(); }
       presentTrackRef.current = null;
       setPresenting(false);
-      return;
+      return false;
     }
     const el = presentElRef.current;
-    if (!el) return;
+    if (!el) return false;
     try {
       const md = navigator.mediaDevices as any;
       const stream: MediaStream = await md.getDisplayMedia({
@@ -731,7 +732,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       await room.localParticipant.publishTrack(track as any, { source: Track.Source.ScreenShare });
       presentTrackRef.current = track;
       setPresenting(true);
-    } catch { /* professor cancelou o seletor */ }
+      return true;
+    } catch { /* professor cancelou o seletor */ return false; }
   };
 
   // confirm() nativo é bloqueado em iframe cross-origin (embed) → modal in-app.
@@ -911,8 +913,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // Inicia o screen-share RECORTADO só na área do pacote (presentElRef) — assim
           // os alunos têm a visão EXATA do pacote de apresentação. É o 1º clique do
           // sequenciador (gesto do usuário exigido pelo getDisplayMedia); vem antes do
-          // startClass p/ preservar o gesto.
-          if (!presenting) await togglePresent();
+          // startClass p/ preservar o gesto. Só AVANÇA se o facilitador confirmar o
+          // compartilhamento — se cancelar (sem querer), fica na etapa p/ tentar de novo.
+          if (!presenting) {
+            const shared = await togglePresent();
+            if (!shared) break;   // cancelou/falhou → não avança
+          }
           if (!pblClass?.active && pblRoster?.activity_id) await sdk.openpbl.startClass(roomId, pblRoster.activity_id).catch(() => {});
           presentationPost("next");
           await goToStep(next);
