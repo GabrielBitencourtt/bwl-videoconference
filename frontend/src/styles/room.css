@@ -947,52 +947,46 @@
    Fundo sólido → o recorte (screen-share) captura a questão e o aluno também a vê. */
 .vr-pbl-question {
   position: absolute; inset: 0; z-index: 5;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 24px; padding: 6% 8%; text-align: center;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 16px 18px; text-align: center;
   background: linear-gradient(160deg, #4c1d95 0%, #6d28d9 55%, #7c3aed 100%);
   color: #fff;
 }
-.vr-pbl-question-kicker {
-  font-size: clamp(13px, 1.4vw, 18px); font-weight: 700; letter-spacing: 2px;
-  text-transform: uppercase; opacity: .8;
-}
-.vr-pbl-question-text {
-  font-size: clamp(22px, 3vw, 44px); font-weight: 800; line-height: 1.28;
-  max-width: 22ch; text-wrap: balance;
-  text-shadow: 0 2px 12px rgba(0,0,0,.25);
-}
 .vr-pbl-question-waiting {
-  display: flex; flex-direction: column; gap: 10px;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center;
   font-size: clamp(18px, 2vw, 26px); font-weight: 700; opacity: .92;
 }
 .vr-pbl-question-waiting span { font-size: 14px; font-weight: 500; opacity: .7; max-width: 34ch; }
 
-/* Cascata de questões: cada clique revela mais um card (retângulo), acumulando. */
+/* Cascata de questões: cada clique revela mais um card (retângulo), acumulando.
+   Preenche a área e distribui a altura entre os cards (flex) → 5 cabem sem scroll. */
 .vr-pbl-qcascade {
-  display: flex; flex-direction: column; gap: 14px;
-  width: 100%; max-width: 40ch; max-height: 100%;
-  overflow-y: auto; padding: 4px;
-  scrollbar-width: thin;
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; flex-direction: column; gap: clamp(8px, 1.4vh, 14px);
 }
 .vr-pbl-qcard {
-  display: flex; align-items: flex-start; gap: 14px;
-  padding: 16px 18px; border-radius: 14px;
+  flex: 1 1 0; min-height: 0; overflow: hidden;
+  display: flex; align-items: center; gap: clamp(10px, 1.2vw, 16px);
+  padding: clamp(8px, 1.4vh, 16px) clamp(14px, 1.6vw, 22px); border-radius: 14px;
   background: rgba(255, 255, 255, .14);
   border: 1px solid rgba(255, 255, 255, .28);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
   backdrop-filter: blur(2px);
   text-align: left;
   animation: vrCascadeIn .5s cubic-bezier(.2, .8, .25, 1) both;
 }
 .vr-pbl-qcard-num {
   flex: none; display: grid; place-items: center;
-  width: 30px; height: 30px; border-radius: 50%;
+  width: clamp(26px, 2.4vw, 34px); height: clamp(26px, 2.4vw, 34px); border-radius: 50%;
   background: #fff; color: #6d28d9;
-  font-size: 15px; font-weight: 800;
+  font-size: clamp(13px, 1.3vw, 16px); font-weight: 800;
 }
 .vr-pbl-qcard-text {
-  font-size: clamp(15px, 1.7vw, 24px); font-weight: 700; line-height: 1.3;
+  flex: 1; min-width: 0;
+  font-size: clamp(13px, 1.5vw, 22px); font-weight: 700; line-height: 1.25;
   color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .25);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
 }
 @keyframes vrCascadeIn {
   from { opacity: 0; transform: translateY(-18px) scale(.94); }
