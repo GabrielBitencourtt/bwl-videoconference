@@ -1024,15 +1024,13 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await goToStep(next);
           break;
         case "question": {
-          // Plenária: apresenta as questões aos alunos AUTOMATICAMENTE (o mesmo clique
-          // do sequenciador inicia a transmissão — é o gesto do usuário exigido pelo
-          // getDisplayMedia). Resiliente: se ainda não está transmitindo, (re)inicia.
-          // A questão é transmitida por DADOS (overlay no aluno) — NÃO usamos screen-share
-          // aqui (nada de prompt de compartilhar tela). Com lista pré-carregada o overlay
-          // troca sozinho pela qCount; SEM lista, avançamos o carousel do pacote a cada
-          // clique → o novo corpo do slide chega pela ponte e entra na cascata (qBodies).
-          // 1ª questão: inicia a gravação.
-          if (qCount === 0 && !recording) { setRecording(true); await sdk.recording.start(roomId).catch(() => setRecording(false)); }
+          // Plenária: as questões são transmitidas por DADOS (overlay no aluno) — sem
+          // screen-share. Com lista pré-carregada o overlay avança pela qCount; SEM lista,
+          // mandamos "next" ao pacote a cada clique → o novo corpo do slide chega pela
+          // ponte e entra na cascata (qBodies).
+          // 1ª questão: inicia a gravação em BACKGROUND (o egress pode demorar a responder;
+          // NÃO pode bloquear o avanço do sequenciador — era isso que travava o botão).
+          if (qCount === 0 && !recording) { setRecording(true); sdk.recording.start(roomId).catch(() => setRecording(false)); }
           if (!pblQuestions.length) presentationPost("next");
           // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
           const n = qCount + 1;
