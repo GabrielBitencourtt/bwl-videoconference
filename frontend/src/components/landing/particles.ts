@@ -1,12 +1,26 @@
 /* ── Campo de partículas em canvas ────────────────────────────────────────────
-   A referência (antigravity.google) roda 4 canvas e nenhuma biblioteca de
-   animação — nem GSAP, nem Three, nem Lenis. Isto aqui segue a mesma escolha:
-   canvas + rAF na mão.
+   A referência (antigravity.google) roda o campo do hero em WebGL2 e não usa
+   nenhuma biblioteca de animação. Aqui é canvas 2D + rAF na mão — mesma ideia,
+   técnica mais simples.
 
-   Três variantes, todas do mesmo motor:
-     specks  — poeira colorida pálida à deriva (hero)
+   Três variantes:
+     specks  — o campo do hero, dirigido pelo cursor (ver abaixo)
      grid    — malha de pontos com respiro (faixa divisória)
      stars   — riscos azuis em fundo preto, sensação de velocidade (footer)
+
+   ── Como o campo do hero funciona ────────────────────────────────────────────
+   Não é física. As partículas não são atraídas nem voam para lugar nenhum: elas
+   ficam nas próprias posições (à deriva lenta) e o que muda é o TAMANHO e a COR,
+   em função da distância até o cursor e do tempo. É isso que produz, de graça:
+     · o vazio no meio      → a cápsula tem amplitude 0 abaixo de INNER
+     · o anel               → a amplitude é uma senoide entre INNER e OUTER
+     · as ondas             → o tamanho pulsa com sin(distância − tempo)
+     · a troca de cor       → o matiz corre com a mesma fase
+     · seguir o cursor      → o campo é medido a partir dele, sem inércia
+   Um modelo de mola/atração produz um nó apertado no centro, que é o oposto.
+
+   Duas camadas: pontinhos escuros em todo o fundo (discretos, sempre) e as
+   cápsulas coloridas, que só existem perto do cursor.
 
    O rAF só existe enquanto o canvas está em tela, e prefers-reduced-motion
    pinta um quadro estático e vai embora.
@@ -14,55 +28,55 @@
 
 export type Variant = "specks" | "grid" | "stars";
 
-/* Uma partícula tem duas posições somadas na hora de desenhar:
-     x,y      — a deriva base, contínua e com wrap no toro
-     ox,oy    — o deslocamento causado pelo cursor, com mola de volta a zero
-   Separar as duas é o que permite o cursor puxar sem matar a deriva: se o
-   amortecimento agisse sobre a velocidade base, o campo congelaria depois do
-   primeiro gesto. */
 type P = {
   x: number; y: number; vx: number; vy: number;
-  ox: number; oy: number; ovx: number; ovy: number;
-  r: number; c: string; a: number;
+  rot: number;   // orientação da cápsula, sorteada por partícula
+  len: number;   // comprimento base
+  th: number;    // espessura
+  r: number; c: string; a: number;   // usados por grid/stars
 };
 
 const REDUCE = "(prefers-reduced-motion: reduce)";
 
-/* Física da atração.
-   O deslocamento de equilíbrio é ~PULL/SPRING: é essa razão, não o PULL
-   sozinho, que decide se o aglomerado aparece. Com SPRING 0.008 o equilíbrio
-   ficava em ~34px — invisível dentro de um raio de 200px. Em 0.0018 passa a
-   ~150px, que é o que faz as partículas realmente se reunirem.
-   DAMP 0.88 mantém a velocidade saturada em ~PULL/(1-DAMP), sem explodir. */
-const R = 260;          // raio de influência
-const R2 = R * R;
-const PULL = 0.8;       // atração radial
-const SWIRL = 0.55;     // componente tangencial: orbita em vez de colapsar
-const INNER = 62;       // solta perto do centro → junta AO REDOR, não em cima
-const SPRING = 0.0018;  // volta pra deriva quando o cursor vai embora
-const DAMP = 0.88;
-const LERP = 0.14;      // suavização do cursor: o aglomerado segue, não teleporta
+/* ── Campo do hero ──────────────────────────────────────────────────────────
+   INNER/OUTER definem o anel; a amplitude é sin() entre os dois, o que zera nas
+   duas bordas e dá o vazio no meio sem nenhum caso especial. */
+const INNER = 120;
+const OUTER = 620;
+const SPAN = OUTER - INNER;
+const OUTER2 = OUTER * OUTER;
+const WAVE_K = 0.028;   // frequência espacial da onda (comprimento ~224px)
+const WAVE_W = 2.1;     // velocidade da onda no tempo
+/* Matiz: bandas correndo pra fora junto com a onda.
+   hue = 50 − mod(fase, 180) fica preso, por construção, em (−130, 50], isto é
+   azul → roxo → magenta → vermelho → laranja → amarelo. O verde (90–160) é
+   inalcançável — e a referência de fato nunca mostra verde. Foi por isso que a
+   deriva temporal solta na rampa não serviu: ela empurrava a faixa inteira e
+   caía no verde.
+   HUE_K 0.36 faz a faixa cobrir ~500px, uma volta completa ao longo do anel. */
+const HUE_0 = 50;
+const HUE_SPAN = 180;
+const HUE_K = 0.36;     // quanto o matiz corre por pixel
+const HUE_W = 22;       // e por segundo — é o que troca a cor sozinho
+const LERP = 0.14;      // suavização do cursor: o anel segue, não teleporta
 
-/* Paletas em rgb() para o canvas — o CSS não alcança pixels de canvas, então
-   estes valores espelham os tokens de landing.css e devem mudar junto. */
 const PALETTE: Record<Variant, string[]> = {
-  specks: ["225,29,42", "255,107,120", "160,160,170", "120,140,220", "230,180,190"],
+  specks: ["18,19,23"],                                   // só a camada de pontinhos
   grid: ["18,19,23"],
   stars: ["90,140,255", "150,190,255", "255,255,255"],
 };
 
-const ZERO = { ox: 0, oy: 0, ovx: 0, ovy: 0 };
-
 function make(v: Variant, w: number, h: number, i: number, n: number): P {
   const pal = PALETTE[v];
   const c = pal[i % pal.length];
+  const base = { rot: 0, len: 0, th: 0 };
+
   if (v === "grid") {
-    // Malha regular com jitter — lê como textura, não como caos.
     const cols = Math.ceil(Math.sqrt(n * (w / h)));
     const rows = Math.ceil(n / cols);
     const gx = (i % cols) / cols, gy = Math.floor(i / cols) / rows;
     return {
-      ...ZERO,
+      ...base,
       x: gx * w + (Math.sin(i * 12.9) * 0.5 + 0.5) * (w / cols),
       y: gy * h + (Math.sin(i * 78.2) * 0.5 + 0.5) * (h / rows),
       vx: 0, vy: 0, r: 1, c, a: 0.5 + Math.sin(i) * 0.3,
@@ -70,17 +84,20 @@ function make(v: Variant, w: number, h: number, i: number, n: number): P {
   }
   if (v === "stars") {
     return {
-      ...ZERO,
+      ...base,
       x: Math.random() * w, y: Math.random() * h,
       vx: 0.4 + Math.random() * 2.2, vy: 0,
       r: 0.6 + Math.random() * 1.2, c, a: 0.35 + Math.random() * 0.65,
     };
   }
   return {
-    ...ZERO,
     x: Math.random() * w, y: Math.random() * h,
-    vx: (Math.random() - 0.5) * 0.14, vy: (Math.random() - 0.5) * 0.14,
-    r: 0.8 + Math.random() * 1.6, c, a: 0.14 + Math.random() * 0.3,
+    // Deriva bem lenta: elas flutuam, não viajam.
+    vx: (Math.random() - 0.5) * 0.09, vy: (Math.random() - 0.5) * 0.09,
+    rot: Math.random() * Math.PI,          // ângulo próprio, como na referência
+    len: 5 + Math.random() * 7,
+    th: 2.4 + Math.random() * 1.8,
+    r: 0.7, c, a: 0.1 + Math.random() * 0.06,
   };
 }
 
@@ -88,7 +105,7 @@ export function initParticles(
   canvas: HTMLCanvasElement,
   variant: Variant,
   density = 1,
-  attract = false,
+  cursorField = false,
 ): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
@@ -97,8 +114,9 @@ export function initParticles(
   let ps: P[] = [];
   let raf = 0;
   let running = false;
+  let t0 = 0;
 
-  // Cursor: cru vindo do ponteiro, suave usado pela física. O listener não faz
+  // Cursor: cru vindo do ponteiro, suave usado pelo campo. O listener não faz
   // conta nenhuma — só guarda dois números; a decisão toda sai no rAF.
   let rawX = 0, rawY = 0, hasCursor = false;
   let curX = 0, curY = 0, curReady = false;
@@ -111,47 +129,96 @@ export function initParticles(
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const n = Math.round((variant === "grid" ? (w * h) / 2600 : (w * h) / 5200) * density);
-    ps = Array.from({ length: Math.max(12, Math.min(n, 900)) }, (_, i) => make(variant, w, h, i, n));
-    draw();
+    ctx.lineCap = "round";                            // é o que faz o risco virar cápsula
+    const per = variant === "grid" ? 2600 : variant === "specks" ? 2100 : 5200;
+    const n = Math.round(((w * h) / per) * density);
+    ps = Array.from({ length: Math.max(12, Math.min(n, 1400)) }, (_, i) => make(variant, w, h, i, n));
+    draw(0);
   };
 
-  const draw = () => {
+  const draw = (t: number) => {
     ctx.clearRect(0, 0, w, h);
+
+    if (variant === "specks") {
+      const live = cursorField && curReady;
+      for (const p of ps) {
+        // Camada 1: o pontinho discreto que existe no fundo inteiro.
+        let drawn = false;
+
+        if (live) {
+          const dx = p.x - curX, dy = p.y - curY;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < OUTER2) {
+            const d = Math.sqrt(d2);
+            if (d > INNER) {
+              const t01 = (d - INNER) / SPAN;
+              // Anel: 0 nas duas bordas, cheio no meio — é daqui que sai o vazio.
+              const ring = Math.sin(t01 * Math.PI);
+              // Onda correndo pra fora: tamanho pulsa com a distância e o tempo.
+              const wv = 0.5 + 0.5 * Math.sin(d * WAVE_K - t * WAVE_W);
+              const k = ring * (0.3 + 0.7 * wv);
+              if (k > 0.04) {
+                // `%` em JS pode devolver negativo — o duplo mod garante [0, SPAN).
+                const ph = (((d * HUE_K - t * HUE_W) % HUE_SPAN) + HUE_SPAN) % HUE_SPAN;
+                const hue = HUE_0 - ph + 360;
+                const len = p.len * k, th = p.th * k;
+                const ca = Math.cos(p.rot) * len * 0.5, sa = Math.sin(p.rot) * len * 0.5;
+                ctx.globalAlpha = 0.25 + 0.75 * k;
+                ctx.strokeStyle = `hsl(${hue} 85% 58%)`;
+                ctx.lineWidth = th;
+                ctx.beginPath();
+                ctx.moveTo(p.x - ca, p.y - sa);
+                ctx.lineTo(p.x + ca, p.y + sa);
+                ctx.stroke();
+                drawn = true;
+              }
+            }
+          }
+        }
+
+        if (!drawn) {
+          ctx.globalAlpha = p.a;
+          ctx.fillStyle = `rgb(${p.c})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+
     for (const p of ps) {
-      const x = p.x + p.ox, y = p.y + p.oy;
       ctx.globalAlpha = p.a;
       if (variant === "stars") {
-        // Risco, não ponto: o rastro é o que dá a sensação de velocidade.
         ctx.strokeStyle = `rgb(${p.c})`;
         ctx.lineWidth = p.r;
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + p.vx * 6, y);
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + p.vx * 6, p.y);
         ctx.stroke();
       } else {
         ctx.fillStyle = `rgb(${p.c})`;
         ctx.beginPath();
-        ctx.arc(x, y, p.r, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
   };
 
-  const tick = () => {
+  const tick = (now: number) => {
+    if (!t0) t0 = now;
+    const t = (now - t0) / 1000;
+
     // Uma leitura de layout por frame, antes de qualquer escrita: o canvas muda
     // de lugar com o scroll, então o retângulo não pode ser cacheado no init.
-    let live = false;
-    if (attract && hasCursor) {
+    if (cursorField && hasCursor) {
       const r = canvas.getBoundingClientRect();
       const tx = rawX - r.left, ty = rawY - r.top;
       if (!curReady) { curX = tx; curY = ty; curReady = true; }   // sem voo inicial
-      curX += (tx - curX) * LERP;                                  // o segue suave
+      curX += (tx - curX) * LERP;                                  // o anel segue suave
       curY += (ty - curY) * LERP;
-      live = true;
-    } else {
-      curReady = false;
     }
 
     for (const p of ps) {
@@ -159,31 +226,8 @@ export function initParticles(
       // Toro: sai de um lado, entra do outro — sem repovoar array.
       if (p.x > w + 8) p.x = -8; else if (p.x < -8) p.x = w + 8;
       if (p.y > h + 8) p.y = -8; else if (p.y < -8) p.y = h + 8;
-
-      if (!attract) continue;
-
-      if (live) {
-        const dx = curX - (p.x + p.ox), dy = curY - (p.y + p.oy);
-        const d2 = dx * dx + dy * dy;
-        if (d2 < R2) {
-          // sqrt só dentro do raio — fora dele o teste quadrado já resolveu
-          const d = Math.sqrt(d2) || 0.001;
-          const nx = dx / d, ny = dy / d;
-          let f = 1 - d / R;
-          if (d < INNER) f *= d / INNER;   // solta no centro: junta ao redor
-          p.ovx += nx * f * PULL - ny * f * SWIRL;
-          p.ovy += ny * f * PULL + nx * f * SWIRL;
-        }
-      }
-
-      // Mola de volta à deriva + amortecimento: quando o cursor sai, o campo
-      // se recompõe sozinho em vez de ficar deformado.
-      p.ovx = (p.ovx - p.ox * SPRING) * DAMP;
-      p.ovy = (p.ovy - p.oy * SPRING) * DAMP;
-      p.ox += p.ovx;
-      p.oy += p.ovy;
     }
-    draw();
+    draw(t);
     raf = requestAnimationFrame(tick);
   };
 
@@ -193,7 +237,7 @@ export function initParticles(
   // Fora da tela não anima: 4 canvas girando ao mesmo tempo é desperdício puro.
   const io = new IntersectionObserver(([e]) => {
     if (e.isIntersecting && !running) { running = true; raf = requestAnimationFrame(tick); }
-    else if (!e.isIntersecting && running) { running = false; cancelAnimationFrame(raf); raf = 0; }
+    else if (!e.isIntersecting && running) { running = false; cancelAnimationFrame(raf); raf = 0; t0 = 0; }
   }, { threshold: 0 });
 
   resize();
@@ -205,18 +249,16 @@ export function initParticles(
   io.observe(canvas);
 
   // O canvas é pointer-events:none e fica atrás do texto, então o ponteiro é
-  // ouvido na janela e convertido — assim a atração continua valendo com o
-  // cursor sobre a headline ou os botões.
+  // ouvido na janela e convertido — assim o campo continua valendo com o cursor
+  // sobre a headline ou os botões.
   const onMove = (e: PointerEvent) => { rawX = e.clientX; rawY = e.clientY; hasCursor = true; };
-  const onLeave = () => { hasCursor = false; };
-  if (attract) {
-    // Só ponteiro fino: em touch não há hover, e prender o dedo pra "juntar as
-    // bolinhas" só atrapalharia o scroll.
-    const fine = window.matchMedia("(pointer: fine)");
-    if (fine.matches) {
-      window.addEventListener("pointermove", onMove, { passive: true });
-      document.addEventListener("pointerleave", onLeave, { passive: true });
-    }
+  const onLeave = () => { hasCursor = false; curReady = false; };
+  const fine = cursorField && window.matchMedia("(pointer: fine)").matches;
+  if (fine) {
+    // Só ponteiro fino: em touch não há hover, e prender o dedo pra acender o
+    // anel só atrapalharia o scroll.
+    window.addEventListener("pointermove", onMove, { passive: true });
+    document.addEventListener("pointerleave", onLeave, { passive: true });
   }
 
   return () => {

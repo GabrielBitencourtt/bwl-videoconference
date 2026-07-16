@@ -83,12 +83,12 @@ const MISSION =
 
 /** Canvas de partículas — o motor vive em landing/particles.ts. */
 function Field({
-  variant, density, attract, className,
-}: { variant: Variant; density?: number; attract?: boolean; className?: string }) {
+  variant, density, cursorField, className,
+}: { variant: Variant; density?: number; cursorField?: boolean; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(
-    () => (ref.current ? initParticles(ref.current, variant, density, attract) : undefined),
-    [variant, density, attract],
+    () => (ref.current ? initParticles(ref.current, variant, density, cursorField) : undefined),
+    [variant, density, cursorField],
   );
   return <canvas className={className} ref={ref} aria-hidden="true" />;
 }
@@ -121,9 +121,7 @@ export default function Landing() {
       <main>
         {/* ── Hero ──────────────────────────────────────────────────────── */}
         <section className="lp-hero" aria-labelledby="hero-h">
-          {/* density 3.5: o campo precisa de massa pra atração ser visível —
-              com a densidade base o aglomerado quase não aparece. */}
-          <Field variant="specks" density={3.5} attract className="lp-hero-field" />
+          <Field variant="specks" cursorField className="lp-hero-field" />
           <div className="lp-hero-in">
             <p className="lp-lockup" data-reveal="now">
               <span className="lp-logo-mark" aria-hidden="true" />
@@ -259,7 +257,7 @@ export default function Landing() {
 
         {/* ── CTA final ─────────────────────────────────────────────────── */}
         <section className="lp-final">
-          <Field variant="specks" density={0.6} className="lp-final-field" />
+          <Field variant="specks" density={0.7} cursorField className="lp-final-field" />
           <h2 data-reveal>Abra sua primeira sala hoje</h2>
           <a className="lp-pill-dark lp-pill-lg" data-reveal style={{ ["--i" as string]: 1 }} href="/portal">
             Criar uma sala <i className="fa-solid fa-arrow-right" aria-hidden="true" />
