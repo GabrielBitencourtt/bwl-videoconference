@@ -925,8 +925,12 @@
 .vr-radar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
 .vr-radar-svg { width: 100%; max-width: 460px; height: auto; }
 .vr-radar-ring { fill: none; stroke: #e2e8f0; stroke-width: 1; }
-/* valor de cada anel da escala (2, 4, 6…), lido no eixo de cima */
-.vr-radar-ringval { fill: #94a3b8; font-size: 7px; font-weight: 600; }
+/* valor de cada anel da escala (2, 4, 6…), lido no eixo de cima. O contorno branco
+   evita que o número se confunda com as linhas do radar que passam por baixo. */
+.vr-radar-ringval {
+  fill: #94a3b8; font-size: 7px; font-weight: 600;
+  stroke: #fff; stroke-width: 2.5px; paint-order: stroke fill;
+}
 .vr-radar-axis { stroke: #e2e8f0; stroke-width: 1; }
 .vr-radar-axis.on { stroke: #94a3b8; stroke-width: 1.5; }
 .vr-radar-label { fill: #334155; font-size: 8.5px; }

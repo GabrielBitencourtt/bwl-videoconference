@@ -1549,9 +1549,7 @@ function wrapText(text: string, max: number): string[] {
     else { lines.push(cur); cur = w; }
   }
   if (cur) lines.push(cur);
-  let out = lines.slice(0, 2);
-  if (lines.length > 2 && out.length === 2) out[1] += "…";
-  return out.map((l) => (l.length > 17 ? l.slice(0, 16) + "…" : l));
+  return lines;   // sem corte: o nome da dimensão aparece inteiro (quebra em quantas linhas precisar)
 }
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
@@ -1702,7 +1700,9 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
   const hiddenSet = new Set(hidden);
   const vis = series.filter((s) => !hiddenSet.has(s.name));
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 72;
+  // Área mais larga que alta: as folgas laterais/verticais é que acomodam os nomes
+  // completos das dimensões (que quebram em quantas linhas precisarem).
+  const W = 460, H = 380, cx = W / 2, cy = H / 2, R = 116;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
     const r = (Math.max(0, Math.min(max, v)) / max) * R;
@@ -1715,7 +1715,7 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
   for (let v = RING_STEP; v <= max + 0.001; v += RING_STEP) rings.push(v);
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
         {rings.map((v, ri) => (
           <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, v).join(",")).join(" ")} />
         ))}
@@ -1729,9 +1729,14 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
           const lx = cx + (R + 10) * Math.cos(angle(i));
           const ly = cy + (R + 10) * Math.sin(angle(i));
           const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
-          const nameLines = wrapText(d, 14);
+          const nameLines = wrapText(d, 16);
           const rows = nameLines.length + 1;                  // + a linha do contador
-          const y0 = ly - ((rows - 1) * 11) / 2;
+          // O bloco cresce SEMPRE afastando-se do centro: acima do eixo ele sobe
+          // (senão a última linha desce em cima do anel e da sua escala), abaixo ele
+          // desce, e nas laterais fica centrado no vértice.
+          const y0 = ly < cy - 8 ? ly - (rows - 1) * 11
+            : ly > cy + 8 ? ly
+              : ly - ((rows - 1) * 11) / 2;
           return (
             <g key={i}>
               <line className={hover === i ? "vr-radar-axis on" : "vr-radar-axis"} x1={cx} y1={cy} x2={ax} y2={ay} />
@@ -1761,8 +1766,8 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
         {hover !== null && (() => {
           const [ox, oy] = point(hover, max);
           const w = 176, h = 60 + Math.max(1, vis.length) * 15;
-          const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
-          const y = Math.max(4, Math.min(size - h - 4, oy - h / 2));
+          const x = Math.max(4, Math.min(W - w - 4, ox > cx ? ox - w - 8 : ox + 8));
+          const y = Math.max(4, Math.min(H - h - 4, oy - h / 2));
           return (
             <foreignObject x={x} y={y} width={w} height={h} style={{ overflow: "visible" }}>
               <div className="vr-radar-tip">
