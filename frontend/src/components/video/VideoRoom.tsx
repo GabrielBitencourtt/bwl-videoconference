@@ -1700,8 +1700,8 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
   const hiddenSet = new Set(hidden);
   const vis = series.filter((s) => !hiddenSet.has(s.name));
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  // Área mais larga que alta: as folgas laterais/verticais é que acomodam os nomes
-  // completos das dimensões (que quebram em quantas linhas precisarem).
+  // Canvas de referência só para posicionar: o viewBox final é recortado no conteúdo
+  // (ver `vb` abaixo), então estas medidas não deixam sobra na tela.
   const W = 460, H = 380, cx = W / 2, cy = H / 2, R = 116;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
@@ -1713,9 +1713,39 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
   const RING_STEP = 2;
   const rings: number[] = [];
   for (let v = RING_STEP; v <= max + 0.001; v += RING_STEP) rings.push(v);
+
+  // Rótulo de cada dimensão: posição calculada uma vez só, porque também é ela que
+  // define os limites reais do desenho (abaixo).
+  const labels = dims.map((d, i) => {
+    const lx = cx + (R + 10) * Math.cos(angle(i));
+    const ly = cy + (R + 10) * Math.sin(angle(i));
+    const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
+    const lines = wrapText(d, 16);
+    const rows = lines.length + 1;                        // + a linha do contador
+    // O bloco cresce SEMPRE afastando-se do centro: acima do eixo ele sobe (senão a
+    // última linha desce em cima do anel e da sua escala), abaixo ele desce, e nas
+    // laterais fica centrado no vértice.
+    const y0 = ly < cy - 8 ? ly - (rows - 1) * 11
+      : ly > cy + 8 ? ly
+        : ly - ((rows - 1) * 11) / 2;
+    return { lx, ly, anchor, lines, rows, y0 } as const;
+  });
+
+  // viewBox colado no desenho: o polígono nunca preenche o retângulo (ainda mais com
+  // nº ímpar de dimensões), e a faixa morta que sobra empurraria a legenda e o tooltip
+  // para longe do gráfico. Aqui a caixa é a união do radar com os rótulos.
+  let x0 = cx - R, x1 = cx + R, yA = cy - R, yB = cy + R;
+  labels.forEach((L) => {
+    const w = Math.max(...L.lines.map((l) => l.length), 9) * 4.7;   // ~largura do texto
+    const lx0 = L.anchor === "middle" ? L.lx - w / 2 : L.anchor === "start" ? L.lx : L.lx - w;
+    x0 = Math.min(x0, lx0); x1 = Math.max(x1, lx0 + w);
+    yA = Math.min(yA, L.y0 - 8); yB = Math.max(yB, L.y0 + (L.rows - 1) * 11 + 4);
+  });
+  const PAD = 4;
+  const vb = `${x0 - PAD} ${yA - PAD} ${x1 - x0 + PAD * 2} ${yB - yA + PAD * 2}`;
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${W} ${H}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={vb} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
         {rings.map((v, ri) => (
           <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, v).join(",")).join(" ")} />
         ))}
@@ -1724,19 +1754,8 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
           const [rx, ry] = point(0, v);
           return <text key={`rv${ri}`} className="vr-radar-ringval" x={rx + 4} y={ry + 3}>{v}</text>;
         })}
-        {dims.map((d, i) => {
+        {labels.map(({ lx, anchor, lines: nameLines, y0 }, i) => {
           const [ax, ay] = point(i, max);
-          const lx = cx + (R + 10) * Math.cos(angle(i));
-          const ly = cy + (R + 10) * Math.sin(angle(i));
-          const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
-          const nameLines = wrapText(d, 16);
-          const rows = nameLines.length + 1;                  // + a linha do contador
-          // O bloco cresce SEMPRE afastando-se do centro: acima do eixo ele sobe
-          // (senão a última linha desce em cima do anel e da sua escala), abaixo ele
-          // desce, e nas laterais fica centrado no vértice.
-          const y0 = ly < cy - 8 ? ly - (rows - 1) * 11
-            : ly > cy + 8 ? ly
-              : ly - ((rows - 1) * 11) / 2;
           return (
             <g key={i}>
               <line className={hover === i ? "vr-radar-axis on" : "vr-radar-axis"} x1={cx} y1={cy} x2={ax} y2={ay} />
