@@ -3,7 +3,7 @@ import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, useParticipants, useTrackToggle, useRoomContext, useLocalParticipant,
 } from "@livekit/components-react";
-import { Track, RoomEvent, Room } from "livekit-client";
+import { Track, RoomEvent, Room, ConnectionState } from "livekit-client";
 import { QRCodeSVG } from "qrcode.react";
 import "@livekit/components-styles";
 import "../../styles/room.css";
@@ -666,8 +666,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const onMsg = (e: MessageEvent) => {
       const d = e.data;
       if (!d || d.source !== "openpbl-package") return;
-      // DEBUG: confirma que as mensagens da ponte chegam (ver no console do webconf).
-      try { console.log("[openpbl-msg]", d.type, d.type === "questions" ? (d.list?.length ?? 0) : (d.label || "")); } catch { /* */ }
+      // DEBUG: dump do PAYLOAD COMPLETO de cada msg da ponte (p/ descobrir onde vem o
+      // texto das questões — o pacote manda `step` mas com label/body vazios).
+      try { console.log("[openpbl-msg]", d.type, JSON.stringify(d)); } catch { console.log("[openpbl-msg]", d.type, d); }
       if (d.type === "step" && typeof d.label === "string") {
         setPblStep(d.label);
         // Corpo do slide = texto da questão provocadora (fallback do overlay se a
@@ -945,12 +946,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!amController || !room) return;   // só quem tem o controle transmite (sem duplicar)
     const inQ = pblStage === "question";
     const send = () => {
+      // Só transmite com a conexão LiveKit pronta — senão publishData rejeita com
+      // "PC manager is closed" (durante reconexão) e polui o console de erros.
+      if (room.state !== ConnectionState.Connected) return;
       try {
         const list = inQ ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : qBodies) : [];
         const data = new TextEncoder().encode(JSON.stringify({
           source: "webconf", type: "plenary-questions", list, total: plenaryTotal,
         }));
-        room.localParticipant?.publishData(data, { reliable: true });
+        room.localParticipant?.publishData(data, { reliable: true })?.catch(() => {});
       } catch { /* */ }
     };
     send();
