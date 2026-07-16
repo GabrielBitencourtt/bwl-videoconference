@@ -1600,7 +1600,7 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
   return (
     <div className="vr-chart-wrap">
       <div className="vr-chart-title">
-        Questionário de Riscos <span className="vr-chart-sub">· {total} aluno(s)</span>
+        Radar de Riscos
         {/* Contagem só no gráfico do facilitador — o aluno não precisa ver quem falta. */}
         {showPending && (
           <span className="vr-chart-sub"> · {completed} concluíram · <b className="vr-chart-pending">{pending} faltam</b></span>
