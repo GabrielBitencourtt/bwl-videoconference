@@ -9,18 +9,29 @@
      stars   — riscos azuis em fundo preto, sensação de velocidade (footer)
 
    ── Como o campo do hero funciona ────────────────────────────────────────────
-   Não é física. As partículas não são atraídas nem voam para lugar nenhum: elas
-   ficam nas próprias posições (à deriva lenta) e o que muda é o TAMANHO e a COR,
-   em função da distância até o cursor e do tempo. É isso que produz, de graça:
-     · o vazio no meio      → a cápsula tem amplitude 0 abaixo de INNER
-     · o anel               → a amplitude é uma senoide entre INNER e OUTER
-     · as ondas             → o tamanho pulsa com sin(distância − tempo)
-     · a troca de cor       → o matiz corre com a mesma fase
-     · seguir o cursor      → o campo é medido a partir dele, sem inércia
-   Um modelo de mola/atração produz um nó apertado no centro, que é o oposto.
+   É uma MALHA 3D pulsando, projetada em perspectiva — não um efeito 2D.
 
-   Duas camadas: pontinhos escuros em todo o fundo (discretos, sempre) e as
-   cápsulas coloridas, que só existem perto do cursor.
+   Os pontos formam um reticulado no plano. Cada um oscila em PROFUNDIDADE com
+   uma onda que sai do cursor:  z = sin(d·K − t·W), com a amplitude decaindo com
+   a distância. Sob projeção em perspectiva centrada no cursor, um ponto que se
+   move em z desliza na tela ao longo da reta que o liga ao centro:
+
+       desloc = (ponto − centro) · z/(f+z)        →  ∝ d · z
+
+   A cápsula é o rastro desse deslizamento. Disso tudo cai de graça:
+     · a orientação radial  → o deslocamento é colinear com (ponto − centro);
+                              é por isso que as cápsulas apontam pro cursor
+     · o vazio no meio      → em d = 0 o deslocamento é 0. Não é caso especial
+     · o anel               → d·exp(−d/DECAY) tem pico em d = DECAY
+     · as ondas             → a própria oscilação em z, correndo pra fora
+     · a troca de cor       → o matiz corre na mesma fase da onda
+     · seguir o cursor      → o centro da projeção É o cursor, sem inércia
+
+   Modelar isso como física de atração (mola puxando partículas) produz um nó
+   apertado no centro — exatamente o oposto do buraco que o 3D gera sozinho.
+
+   Duas camadas: os pontos da malha, discretos e sempre visíveis, e as cápsulas
+   coloridas, que só existem onde a onda tem amplitude.
 
    O rAF só existe enquanto o canvas está em tela, e prefers-reduced-motion
    pinta um quadro estático e vai embora.
@@ -30,7 +41,10 @@ export type Variant = "specks" | "grid" | "stars";
 
 type P = {
   x: number; y: number; vx: number; vy: number;
-  rot: number;   // orientação da cápsula, sorteada por partícula
+  // Tremor próprio somado ao ângulo radial (ver JITTER), guardado já como
+  // cosseno/seno: assim o desenho gira o vetor radial com duas multiplicações,
+  // sem atan2 nem cos/sin por partícula por frame.
+  cj: number; sj: number;
   len: number;   // comprimento base
   th: number;    // espessura
   r: number; c: string; a: number;   // usados por grid/stars
@@ -38,15 +52,24 @@ type P = {
 
 const REDUCE = "(prefers-reduced-motion: reduce)";
 
-/* ── Campo do hero ──────────────────────────────────────────────────────────
-   INNER/OUTER definem o anel; a amplitude é sin() entre os dois, o que zera nas
-   duas bordas e dá o vazio no meio sem nenhum caso especial. */
-const INNER = 120;
-const OUTER = 620;
+/* ── Malha 3D pulsante ──────────────────────────────────────────────────────
+   Envelope da onda medido na referência (densidade de tinta por raio, cursor
+   parado): ~0 até 160px, pico entre 400 e 560, some por volta de 720.
+   Daí INNER/OUTER e o sin() entre eles — pico em 460.
+   Um envelope d·exp(−d/DECAY) não serve: decai devagar demais (ainda tinha 1/3
+   da amplitude a 700px) e nunca zera no centro, então não abre o buraco. */
+const INNER = 140;
+const OUTER = 780;
 const SPAN = OUTER - INNER;
 const OUTER2 = OUTER * OUTER;
-const WAVE_K = 0.028;   // frequência espacial da onda (comprimento ~224px)
-const WAVE_W = 2.1;     // velocidade da onda no tempo
+const GAIN = 9;         // comprimento do rastro no pico, em px
+const WAVE_K = 0.030;   // frequência espacial (comprimento ~209px)
+const WAVE_W = 2.0;     // velocidade da onda no tempo
+/* Tremor sobre a direção radial. Medindo a referência (eixo do blob vs direção
+   radial, média de cos(2·δ)) dá ≈ 0.69: radial, mas não alinhado. Como
+   cos(2δ) ≈ sin(2J)/(2J), isso corresponde a J ≈ 0.72 rad. Alinhamento perfeito
+   daria +1.0 e viraria um leque mecânico. */
+const JITTER = 0.72;    // rad (~41°)
 /* Matiz: bandas correndo pra fora junto com a onda.
    hue = 50 − mod(fase, 180) fica preso, por construção, em (−130, 50], isto é
    azul → roxo → magenta → vermelho → laranja → amarelo. O verde (90–160) é
@@ -69,7 +92,7 @@ const PALETTE: Record<Variant, string[]> = {
 function make(v: Variant, w: number, h: number, i: number, n: number): P {
   const pal = PALETTE[v];
   const c = pal[i % pal.length];
-  const base = { rot: 0, len: 0, th: 0 };
+  const base = { cj: 1, sj: 0, len: 0, th: 0 };
 
   if (v === "grid") {
     const cols = Math.ceil(Math.sqrt(n * (w / h)));
@@ -90,13 +113,20 @@ function make(v: Variant, w: number, h: number, i: number, n: number): P {
       r: 0.6 + Math.random() * 1.2, c, a: 0.35 + Math.random() * 0.65,
     };
   }
+  // Malha: reticulado com jitter. Regular demais vira papel quadriculado; o
+  // jitter quebra o alinhamento sem desmanchar a estrutura.
+  const cols = Math.ceil(Math.sqrt(n * (w / h))) || 1;
+  const rows = Math.ceil(n / cols) || 1;
+  const cw = w / cols, ch = h / rows;
+  const j = (Math.random() * 2 - 1) * JITTER;
   return {
-    x: Math.random() * w, y: Math.random() * h,
-    // Deriva bem lenta: elas flutuam, não viajam.
-    vx: (Math.random() - 0.5) * 0.09, vy: (Math.random() - 0.5) * 0.09,
-    rot: Math.random() * Math.PI,          // ângulo próprio, como na referência
-    len: 5 + Math.random() * 7,
-    th: 2.4 + Math.random() * 1.8,
+    x: (i % cols) * cw + cw * (0.2 + Math.random() * 0.6),
+    y: Math.floor(i / cols) * ch + ch * (0.2 + Math.random() * 0.6),
+    // Deriva bem lenta: a malha respira, não viaja.
+    vx: (Math.random() - 0.5) * 0.05, vy: (Math.random() - 0.5) * 0.05,
+    cj: Math.cos(j), sj: Math.sin(j),
+    len: 0.7 + Math.random() * 0.6,    // fator sobre o rastro calculado
+    th: 1.7 + Math.random() * 1.1,
     r: 0.7, c, a: 0.1 + Math.random() * 0.06,
   };
 }
@@ -130,7 +160,8 @@ export function initParticles(
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineCap = "round";                            // é o que faz o risco virar cápsula
-    const per = variant === "grid" ? 2600 : variant === "specks" ? 2100 : 5200;
+    // specks: densidade calibrada contra a referência (tinta colorida por raio).
+    const per = variant === "grid" ? 2600 : variant === "specks" ? 3800 : 5200;
     const n = Math.round(((w * h) / per) * density);
     ps = Array.from({ length: Math.max(12, Math.min(n, 1400)) }, (_, i) => make(variant, w, h, i, n));
     draw(0);
@@ -150,28 +181,32 @@ export function initParticles(
           const d2 = dx * dx + dy * dy;
           if (d2 < OUTER2) {
             const d = Math.sqrt(d2);
-            if (d > INNER) {
-              const t01 = (d - INNER) / SPAN;
-              // Anel: 0 nas duas bordas, cheio no meio — é daqui que sai o vazio.
-              const ring = Math.sin(t01 * Math.PI);
-              // Onda correndo pra fora: tamanho pulsa com a distância e o tempo.
-              const wv = 0.5 + 0.5 * Math.sin(d * WAVE_K - t * WAVE_W);
-              const k = ring * (0.3 + 0.7 * wv);
-              if (k > 0.04) {
-                // `%` em JS pode devolver negativo — o duplo mod garante [0, SPAN).
-                const ph = (((d * HUE_K - t * HUE_W) % HUE_SPAN) + HUE_SPAN) % HUE_SPAN;
-                const hue = HUE_0 - ph + 360;
-                const len = p.len * k, th = p.th * k;
-                const ca = Math.cos(p.rot) * len * 0.5, sa = Math.sin(p.rot) * len * 0.5;
-                ctx.globalAlpha = 0.25 + 0.75 * k;
-                ctx.strokeStyle = `hsl(${hue} 85% 58%)`;
-                ctx.lineWidth = th;
-                ctx.beginPath();
-                ctx.moveTo(p.x - ca, p.y - sa);
-                ctx.lineTo(p.x + ca, p.y + sa);
-                ctx.stroke();
-                drawn = true;
-              }
+            // Oscilação em profundidade: a pulsação da malha, correndo pra fora.
+            const z = Math.sin(d * WAVE_K - t * WAVE_W);
+            // Envelope medido: zera nas duas bordas — é o que abre o buraco.
+            const env = d < INNER ? 0 : Math.sin(((d - INNER) / SPAN) * Math.PI);
+            const amp = GAIN * env * z * p.len;
+            const mag = amp < 0 ? -amp : amp;
+            if (mag > 0.9) {
+              // `%` em JS pode devolver negativo — o duplo mod garante [0, SPAN).
+              const ph = (((d * HUE_K - t * HUE_W) % HUE_SPAN) + HUE_SPAN) % HUE_SPAN;
+              const hue = HUE_0 - ph + 360;
+              // Direção radial normalizada, girada pelo tremor da partícula.
+              // O deslocamento é colinear com ela: é isso que aponta a cápsula
+              // pro cursor e desenha o círculo em volta.
+              const nx = dx / d, ny = dy / d;
+              const ca = (nx * p.cj - ny * p.sj) * amp;
+              const sa = (ny * p.cj + nx * p.sj) * amp;
+              const k = mag / 18 > 1 ? 1 : mag / 18;
+              ctx.globalAlpha = 0.25 + 0.75 * k;
+              ctx.strokeStyle = `hsl(${hue} 85% 58%)`;
+              ctx.lineWidth = p.th;
+              ctx.beginPath();
+              // Do ponto em repouso até onde a profundidade o levou.
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p.x + ca, p.y + sa);
+              ctx.stroke();
+              drawn = true;
             }
           }
         }
