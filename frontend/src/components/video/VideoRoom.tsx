@@ -1222,8 +1222,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 </div>
               ) : null
             ) : chartForStudents ? (
-              // "Mostrar gráfico" em diante: o aluno também vê o gráfico.
-              <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
+              // "Mostrar gráfico" em diante: o aluno também vê o gráfico — ESTÁTICO
+              // (sem hover/tooltip/filtro e sem a contagem de pendentes).
+              <div className="vr-pbl-present-big"><RiskChart roomId={roomId} interactive={false} /></div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
               <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
@@ -1440,7 +1441,7 @@ const STEPS: StepDef[] = [
   { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
   { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
   { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
-  { id: "situational",        action: "Análise situacional",                  head: "Plenária" },
+  { id: "situational",        action: "Análise situacional",                  head: "Análise situacional" },
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
   { id: "show_chart",         action: "Mostrar gráfico",                      head: "Análise situacional" },
   { id: "closing",            action: "Encerramento",                         head: "Análise situacional" },
@@ -1517,7 +1518,7 @@ function wrapText(text: string, max: number): string[] {
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
-function RiskChart({ roomId }: { roomId: string }) {
+function RiskChart({ roomId, interactive = true }: { roomId: string; interactive?: boolean }) {
   const sdk = useSDK();
   const [chart, setChart] = useState<any | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "wait" | "nodim">("loading");
@@ -1549,10 +1550,19 @@ function RiskChart({ roomId }: { roomId: string }) {
     series.push({ name: g.name || `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
   });
 
+  const total = chart.total || 0;
+  const completed = chart.completed || 0;          // respondeu TODAS as dimensões
+  const pending = Math.max(0, total - completed);
   return (
     <div className="vr-chart-wrap">
-      <div className="vr-chart-title">Questionário de Riscos <span className="vr-chart-sub">· {chart.total || 0} aluno(s)</span></div>
-      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={chart.total || 0} />
+      <div className="vr-chart-title">
+        Questionário de Riscos <span className="vr-chart-sub">· {total} aluno(s)</span>
+        {/* Contagem só no gráfico do facilitador (o do aluno é estático e sem números). */}
+        {interactive && (
+          <span className="vr-chart-sub"> · {completed} concluíram · <b className="vr-chart-pending">{pending} faltam</b></span>
+        )}
+      </div>
+      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={total} interactive={interactive} />
     </div>
   );
 }
@@ -1628,15 +1638,16 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   );
 }
 
-function RadarSvg({ dims, series, max, answered, total }: {
+function RadarSvg({ dims, series, max, answered, total, interactive = true }: {
   dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
-  answered: number[]; total: number;
+  answered: number[]; total: number; interactive?: boolean;
 }) {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
   // Legenda vira FILTRO: clicar oculta/mostra a série. `vis` = séries visíveis.
+  // Para o ALUNO (interactive=false) o gráfico é estático: sem hover, tooltip ou filtro.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const vis = series.filter((s) => !hidden.has(s.name));
+  const vis = interactive ? series.filter((s) => !hidden.has(s.name)) : series;
   const toggleSeries = (name: string) =>
     setHidden((h) => { const n = new Set(h); n.has(name) ? n.delete(name) : n.add(name); return n; });
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
@@ -1650,7 +1661,7 @@ function RadarSvg({ dims, series, max, answered, total }: {
   const rings = [0.25, 0.5, 0.75, 1];
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={interactive ? () => setHover(null) : undefined}>
         {rings.map((f, ri) => (
           <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, max * f).join(",")).join(" ")} />
         ))}
@@ -1681,14 +1692,14 @@ function RadarSvg({ dims, series, max, answered, total }: {
           const [px, py] = point(hover, s.values[hover] ?? 0);
           return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
         })}
-        {/* áreas invisíveis por dimensão (hover) */}
-        {dims.map((_, i) => {
+        {/* áreas invisíveis por dimensão (hover) — só no gráfico interativo (facilitador) */}
+        {interactive && dims.map((_, i) => {
           const [ex, ey] = point(i, max);
           return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
         {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
-        {hover !== null && (() => {
+        {interactive && hover !== null && (() => {
           const [ox, oy] = point(hover, max);
           const w = 176, h = 60 + Math.max(1, vis.length) * 15;
           const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
@@ -1710,12 +1721,17 @@ function RadarSvg({ dims, series, max, answered, total }: {
         })()}
       </svg>
       <div className="vr-radar-legend">
-        {series.map((s) => (
+        {series.map((s) => (interactive ? (
           <button key={s.name} type="button" className="vr-radar-leg" data-off={hidden.has(s.name) || undefined}
             onClick={() => toggleSeries(s.name)} title="Clique para mostrar/ocultar esta série">
             <i style={{ background: s.color }} />{s.name}
           </button>
-        ))}
+        ) : (
+          // Aluno: legenda apenas informativa (sem filtro).
+          <span key={s.name} className="vr-radar-leg" data-static="1">
+            <i style={{ background: s.color }} />{s.name}
+          </span>
+        )))}
       </div>
     </div>
   );

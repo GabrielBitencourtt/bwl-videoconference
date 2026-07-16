@@ -508,11 +508,15 @@ async def risk_chart(room_id: str, user: CurrentUser | None = Depends(optional_u
 
     # quem respondeu cada dimensão (grade > 0), no total da turma
     answered = [0] * D
+    # CONCLUÍDO = aluno que respondeu TODAS as dimensões (grade > 0 em todas).
+    completed = 0
     for em in all_emails:
         p = perf_by_email.get(em)
         for i in range(D):
             if grade(p, i) > 0:
                 answered[i] += 1
+        if D and all(grade(p, i) > 0 for i in range(D)):
+            completed += 1
 
     out_groups = [
         {"name": g["name"], "grades": avg_over(group_emails.get(str(g["id"]), [])),
@@ -527,6 +531,7 @@ async def risk_chart(room_id: str, user: CurrentUser | None = Depends(optional_u
         "groups": out_groups,
         "answered": answered,
         "total": len(all_emails),
+        "completed": completed,          # alunos que responderam TODAS as dimensões
     }}
     _chart_cache[room_id] = (now, result)
     return result
