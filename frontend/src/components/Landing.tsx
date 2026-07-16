@@ -82,9 +82,14 @@ const MISSION =
   "O Video Rooms Kit é a sala de sessões da OpenPBL: um grupo, um problema real e uma IA que devolve a leitura das habilidades que apareceram ali.";
 
 /** Canvas de partículas — o motor vive em landing/particles.ts. */
-function Field({ variant, density, className }: { variant: Variant; density?: number; className?: string }) {
+function Field({
+  variant, density, attract, className,
+}: { variant: Variant; density?: number; attract?: boolean; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => (ref.current ? initParticles(ref.current, variant, density) : undefined), [variant, density]);
+  useEffect(
+    () => (ref.current ? initParticles(ref.current, variant, density, attract) : undefined),
+    [variant, density, attract],
+  );
   return <canvas className={className} ref={ref} aria-hidden="true" />;
 }
 
@@ -116,7 +121,9 @@ export default function Landing() {
       <main>
         {/* ── Hero ──────────────────────────────────────────────────────── */}
         <section className="lp-hero" aria-labelledby="hero-h">
-          <Field variant="specks" className="lp-hero-field" />
+          {/* density 3.5: o campo precisa de massa pra atração ser visível —
+              com a densidade base o aglomerado quase não aparece. */}
+          <Field variant="specks" density={3.5} attract className="lp-hero-field" />
           <div className="lp-hero-in">
             <p className="lp-lockup" data-reveal="now">
               <span className="lp-logo-mark" aria-hidden="true" />
