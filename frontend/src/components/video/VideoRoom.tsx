@@ -1763,20 +1763,23 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
       </svg>
-      {/* Tooltip FORA do svg: ancorado num canto do painel, sempre do lado oposto ao
-          vértice sob o mouse — assim nunca cobre a área que se está lendo. */}
-      {hover !== null && (
-        <div className="vr-radar-tip" data-side={point(hover, max)[0] > cx ? "left" : "right"}>
-          <div className="vr-radar-tip-h">{dims[hover]}</div>
-          <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
-          {vis.map((s) => (
-            <div key={s.name} className="vr-radar-tip-row">
-              <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
-              <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Slot fixo entre o radar e a legenda: o tooltip sempre sai AQUI, nunca por cima
+          do gráfico. O espaço fica reservado mesmo sem hover, senão o radar redimensiona
+          a cada passada do mouse. */}
+      <div className="vr-radar-tipslot">
+        {hover !== null && (
+          <div className="vr-radar-tip">
+            <div className="vr-radar-tip-h">{dims[hover]}</div>
+            <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
+            {vis.map((s) => (
+              <div key={s.name} className="vr-radar-tip-row">
+                <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
+                <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="vr-radar-legend">
         {series.map((s) => (canFilter ? (
           <button key={s.name} type="button" className="vr-radar-leg" data-off={hiddenSet.has(s.name) || undefined}

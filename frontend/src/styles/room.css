@@ -939,17 +939,18 @@
 .vr-radar-label.on { fill: #0f172a; font-weight: 700; }
 .vr-radar-count { fill: #94a3b8; font-size: 7.5px; }
 .vr-radar-series { stroke-width: 2; stroke-linejoin: round; }
-/* Tooltip do radar: fora do svg, ancorado no topo do painel (lado oposto ao vértice
-   sob o mouse) para nunca tampar o gráfico. `pointer-events:none` para não roubar o
-   hover de quem está por baixo. */
+/* Área reservada para o tooltip, entre o radar e a legenda. Altura fixa: sem isto o
+   svg (flex:1) encolheria/cresceria a cada hover. */
+.vr-radar-tipslot {
+  flex: none; width: 100%; min-height: 116px;
+  display: flex; align-items: center; justify-content: center;
+}
+/* Tooltip do radar: fora do svg, sempre no slot abaixo dele — nunca tampa o gráfico. */
 .vr-radar-tip {
-  position: absolute; top: 0; z-index: 3; pointer-events: none;
-  box-sizing: border-box; width: 210px; max-width: 46%;
+  box-sizing: border-box; width: 268px; max-width: 92%; pointer-events: none;
   background: #0f172a; color: #f1f5f9; border-radius: 8px; padding: 8px 10px;
   font-size: 12px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }
-.vr-radar-tip[data-side="left"] { left: 0; }
-.vr-radar-tip[data-side="right"] { right: 0; }
 .vr-radar-tip-h { font-weight: 700; font-size: 13px; margin-bottom: 1px; }
 .vr-radar-tip-a { color: #38bdf8; font-weight: 600; margin-bottom: 3px; }
 .vr-radar-tip-row { display: flex; align-items: center; gap: 5px; }
