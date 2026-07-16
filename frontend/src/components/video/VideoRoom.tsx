@@ -807,6 +807,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // A apresentação fica SEMPRE no frame ao lado da câmera do facilitador e da grade
   // de alunos — nunca ocupa a tela inteira (nem na plenária/questões).
   const [chartHidden, setChartHidden] = useState(false);
+  // Filtro da legenda do gráfico (séries ocultas) — SINCRONIZADO: o controlador aplica
+  // e replica para os alunos por dados; o aluno só reflete (não interage).
+  const [chartFilter, setChartFilter] = useState<string[]>([]);
+  const toggleChartSeries = (name: string) =>
+    setChartFilter((f) => (f.includes(name) ? f.filter((x) => x !== name) : [...f, name]));
   const [stageBusy, setStageBusy] = useState(false);
   const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
   // Fallback quando o pacote NÃO manda a lista pré-carregada (`pblQuestions` vazio):
@@ -870,6 +875,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             if (prev && prev.total === total && prev.list.join("") === list.join("")) return prev;
             return { list, total };
           });
+        }
+        // Filtro do gráfico aplicado pelo facilitador → replica aqui (dedupe: reenviado a cada 3s).
+        if (m?.source === "webconf" && m?.type === "chart-filter" && Array.isArray(m.hidden)) {
+          const h: string[] = m.hidden.map(String);
+          setChartFilter((prev) => (prev.join("") === h.join("") ? prev : h));
         }
       } catch { /* */ }
     };
@@ -962,6 +972,25 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
   }, [amController, room, pblStage, qCount, pblQuestions, qBodies, plenaryTotal]);
+
+  // Filtro do gráfico: o controlador transmite as séries ocultas → o gráfico do aluno
+  // fica sincronizado. Reenvia a cada 3s enquanto o gráfico está no ar (quem entra
+  // depois já pega o filtro atual).
+  useEffect(() => {
+    if (!amController || !room || !chartForStaff) return;
+    const send = () => {
+      if (room.state !== ConnectionState.Connected) return;
+      try {
+        const data = new TextEncoder().encode(JSON.stringify({
+          source: "webconf", type: "chart-filter", hidden: chartFilter,
+        }));
+        room.localParticipant?.publishData(data, { reliable: true })?.catch(() => {});
+      } catch { /* */ }
+    };
+    send();
+    const id = setInterval(send, 3000);
+    return () => clearInterval(id);
+  }, [amController, room, chartForStaff, chartFilter]);
 
   // Re-recorta a transmissão para a área do pacote sempre que ela (re)aparece — ex.: após
   // os grupos o iframe remonta e o CropTarget antigo fica órfão (o aluno veria preto).
@@ -1199,7 +1228,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               chartForStaff ? (
                 // "Liberar análise de riscos" em diante: SÓ o gráfico (ocultável).
                 !chartHidden ? (
-                  <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
+                  <div className="vr-pbl-present-big">
+                    <RiskChart roomId={roomId} hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries} />
+                  </div>
                 ) : null
               ) : showDimensions ? (
                 // Análise situacional: cascata das DIMENSÕES de risco (injetadas na sala).
@@ -1228,7 +1259,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             ) : chartForStudents ? (
               // "Mostrar gráfico" em diante: o aluno também vê o gráfico — ESTÁTICO
               // (sem hover/tooltip/filtro e sem a contagem de pendentes).
-              <div className="vr-pbl-present-big"><RiskChart roomId={roomId} interactive={false} /></div>
+              <div className="vr-pbl-present-big">
+                <RiskChart roomId={roomId} interactive={false} hiddenSeries={chartFilter} />
+              </div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
               <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
@@ -1522,7 +1555,11 @@ function wrapText(text: string, max: number): string[] {
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
-function RiskChart({ roomId, interactive = true }: { roomId: string; interactive?: boolean }) {
+function RiskChart({ roomId, interactive = true, hiddenSeries = [], onToggleSeries }: {
+  roomId: string; interactive?: boolean;
+  /** Filtro da legenda — sincronizado: o do facilitador replica no gráfico do aluno. */
+  hiddenSeries?: string[]; onToggleSeries?: (name: string) => void;
+}) {
   const sdk = useSDK();
   const [chart, setChart] = useState<any | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "wait" | "nodim">("loading");
@@ -1566,7 +1603,8 @@ function RiskChart({ roomId, interactive = true }: { roomId: string; interactive
           <span className="vr-chart-sub"> · {completed} concluíram · <b className="vr-chart-pending">{pending} faltam</b></span>
         )}
       </div>
-      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={total} interactive={interactive} />
+      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={total}
+        interactive={interactive} hidden={hiddenSeries} onToggle={onToggleSeries} />
     </div>
   );
 }
@@ -1645,18 +1683,18 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   );
 }
 
-function RadarSvg({ dims, series, max, answered, total, interactive = true }: {
+function RadarSvg({ dims, series, max, answered, total, interactive = true, hidden = [], onToggle }: {
   dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
   answered: number[]; total: number; interactive?: boolean;
+  /** Séries ocultas — estado SINCRONIZADO (o filtro do facilitador replica no aluno). */
+  hidden?: string[]; onToggle?: (name: string) => void;
 }) {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
-  // Legenda vira FILTRO: clicar oculta/mostra a série. `vis` = séries visíveis.
-  // Para o ALUNO (interactive=false) o gráfico é estático: sem hover, tooltip ou filtro.
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const vis = interactive ? series.filter((s) => !hidden.has(s.name)) : series;
-  const toggleSeries = (name: string) =>
-    setHidden((h) => { const n = new Set(h); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  // Legenda = FILTRO. O filtro vale para TODOS (o aluno recebe o do facilitador);
+  // só a INTERAÇÃO (clicar/hover/tooltip) é exclusiva do facilitador.
+  const hiddenSet = new Set(hidden);
+  const vis = series.filter((s) => !hiddenSet.has(s.name));
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
   const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 72;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
@@ -1729,13 +1767,13 @@ function RadarSvg({ dims, series, max, answered, total, interactive = true }: {
       </svg>
       <div className="vr-radar-legend">
         {series.map((s) => (interactive ? (
-          <button key={s.name} type="button" className="vr-radar-leg" data-off={hidden.has(s.name) || undefined}
-            onClick={() => toggleSeries(s.name)} title="Clique para mostrar/ocultar esta série">
+          <button key={s.name} type="button" className="vr-radar-leg" data-off={hiddenSet.has(s.name) || undefined}
+            onClick={() => onToggle?.(s.name)} title="Clique para mostrar/ocultar esta série (replica para os alunos)">
             <i style={{ background: s.color }} />{s.name}
           </button>
         ) : (
-          // Aluno: legenda apenas informativa (sem filtro).
-          <span key={s.name} className="vr-radar-leg" data-static="1">
+          // Aluno: legenda informativa (sem clique), refletindo o filtro do facilitador.
+          <span key={s.name} className="vr-radar-leg" data-static="1" data-off={hiddenSet.has(s.name) || undefined}>
             <i style={{ background: s.color }} />{s.name}
           </span>
         )))}
