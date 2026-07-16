@@ -1762,28 +1762,21 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
           return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
-        {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
-        {hover !== null && (() => {
-          const [ox, oy] = point(hover, max);
-          const w = 176, h = 60 + Math.max(1, vis.length) * 15;
-          const x = Math.max(4, Math.min(W - w - 4, ox > cx ? ox - w - 8 : ox + 8));
-          const y = Math.max(4, Math.min(H - h - 4, oy - h / 2));
-          return (
-            <foreignObject x={x} y={y} width={w} height={h} style={{ overflow: "visible" }}>
-              <div className="vr-radar-tip">
-                <div className="vr-radar-tip-h">{dims[hover]}</div>
-                <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
-                {vis.map((s) => (
-                  <div key={s.name} className="vr-radar-tip-row">
-                    <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
-                    <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
-                  </div>
-                ))}
-              </div>
-            </foreignObject>
-          );
-        })()}
       </svg>
+      {/* Tooltip FORA do svg: ancorado num canto do painel, sempre do lado oposto ao
+          vértice sob o mouse — assim nunca cobre a área que se está lendo. */}
+      {hover !== null && (
+        <div className="vr-radar-tip" data-side={point(hover, max)[0] > cx ? "left" : "right"}>
+          <div className="vr-radar-tip-h">{dims[hover]}</div>
+          <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
+          {vis.map((s) => (
+            <div key={s.name} className="vr-radar-tip-row">
+              <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
+              <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="vr-radar-legend">
         {series.map((s) => (canFilter ? (
           <button key={s.name} type="button" className="vr-radar-leg" data-off={hiddenSet.has(s.name) || undefined}
