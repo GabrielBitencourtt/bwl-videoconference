@@ -1231,7 +1231,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               <div className="vr-pbl-present-big"><RiskChart roomId={roomId} interactive={false} /></div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
-              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
+              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
             ) : showQuestionsArea && plenaryQ?.list?.length ? (
               // Aluno na plenária: recebe as questões por dados e mostra a MESMA cascata.
               <div className="vr-pbl-present-big">
@@ -1614,9 +1614,10 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   );
 }
 
-/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). As dimensões vêm do
- *  dimensionsId informado na criação da sala (via /risk-chart, liberado a qualquer
- *  participante). Aparecem todas de uma vez → sem progresso/realce de "mais recente". */
+/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). Vêm do conjunto
+ *  escolhido na criação da sala (`risk_dimensions`, sem depender de aluno); fallback
+ *  para o /risk-chart em salas antigas. Usa o MESMO componente/CSS/animação das
+ *  questões da plenária (QuestionCascade com progress + emphasize). */
 function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
   const sdk = useSDK();
   const [fetched, setFetched] = useState<string[]>([]);
@@ -1634,7 +1635,9 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   }, [roomId, hasRoomDims]);
   const dims = hasRoomDims ? (roomDims as string[]) : fetched;
   return dims.length ? (
-    <QuestionCascade items={dims} label="Dimensões de risco" icon="🎯" />
+    // Mesma animação/CSS das questões da plenária: mesmo componente e mesmas flags
+    // (progress + emphasize) → cards idênticos, com dots e realce do último.
+    <QuestionCascade items={dims} total={dims.length} label="Dimensões de risco" icon="🎯" progress emphasize />
   ) : (
     <div className="vr-pbl-question">
       <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
