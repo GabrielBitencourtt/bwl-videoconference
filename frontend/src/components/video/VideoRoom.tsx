@@ -1229,7 +1229,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 // "Liberar análise de riscos" em diante: SÓ o gráfico (ocultável).
                 !chartHidden ? (
                   <div className="vr-pbl-present-big">
-                    <RiskChart roomId={roomId} hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries} />
+                    <RiskChart roomId={roomId} canFilter showPending
+                      hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries} />
                   </div>
                 ) : null
               ) : showDimensions ? (
@@ -1260,7 +1261,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               // "Mostrar gráfico" em diante: o aluno também vê o gráfico — ESTÁTICO
               // (sem hover/tooltip/filtro e sem a contagem de pendentes).
               <div className="vr-pbl-present-big">
-                <RiskChart roomId={roomId} interactive={false} hiddenSeries={chartFilter} />
+                <RiskChart roomId={roomId} hiddenSeries={chartFilter} />
               </div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
@@ -1555,8 +1556,12 @@ function wrapText(text: string, max: number): string[] {
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
-function RiskChart({ roomId, interactive = true, hiddenSeries = [], onToggleSeries }: {
-  roomId: string; interactive?: boolean;
+function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSeries = [], onToggleSeries }: {
+  roomId: string;
+  /** Quem controla a sessão filtra pela legenda; o aluno só segue o filtro (mas explora o gráfico). */
+  canFilter?: boolean;
+  /** Quantos alunos ainda faltam responder — informação de condução, só para o facilitador. */
+  showPending?: boolean;
   /** Filtro da legenda — sincronizado: o do facilitador replica no gráfico do aluno. */
   hiddenSeries?: string[]; onToggleSeries?: (name: string) => void;
 }) {
@@ -1598,13 +1603,13 @@ function RiskChart({ roomId, interactive = true, hiddenSeries = [], onToggleSeri
     <div className="vr-chart-wrap">
       <div className="vr-chart-title">
         Questionário de Riscos <span className="vr-chart-sub">· {total} aluno(s)</span>
-        {/* Contagem só no gráfico do facilitador (o do aluno é estático e sem números). */}
-        {interactive && (
+        {/* Contagem só no gráfico do facilitador — o aluno não precisa ver quem falta. */}
+        {showPending && (
           <span className="vr-chart-sub"> · {completed} concluíram · <b className="vr-chart-pending">{pending} faltam</b></span>
         )}
       </div>
       <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={total}
-        interactive={interactive} hidden={hiddenSeries} onToggle={onToggleSeries} />
+        canFilter={canFilter} hidden={hiddenSeries} onToggle={onToggleSeries} />
     </div>
   );
 }
@@ -1683,16 +1688,17 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   );
 }
 
-function RadarSvg({ dims, series, max, answered, total, interactive = true, hidden = [], onToggle }: {
+function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidden = [], onToggle }: {
   dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
-  answered: number[]; total: number; interactive?: boolean;
+  answered: number[]; total: number;
+  /** Legenda clicável — só quem controla a sessão filtra; o aluno explora o gráfico
+   *  (hover/tooltip) mas apenas SEGUE o filtro aplicado pelo facilitador. */
+  canFilter?: boolean;
   /** Séries ocultas — estado SINCRONIZADO (o filtro do facilitador replica no aluno). */
   hidden?: string[]; onToggle?: (name: string) => void;
 }) {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
-  // Legenda = FILTRO. O filtro vale para TODOS (o aluno recebe o do facilitador);
-  // só a INTERAÇÃO (clicar/hover/tooltip) é exclusiva do facilitador.
   const hiddenSet = new Set(hidden);
   const vis = series.filter((s) => !hiddenSet.has(s.name));
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
@@ -1703,13 +1709,21 @@ function RadarSvg({ dims, series, max, answered, total, interactive = true, hidd
     return [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
   };
   const poly = (vals: number[]) => dims.map((_, i) => point(i, vals[i] ?? 0).join(",")).join(" ");
-  const rings = [0.25, 0.5, 0.75, 1];
+  // Anéis de 2 em 2 (0 → max), cada um rotulado com o seu valor.
+  const RING_STEP = 2;
+  const rings: number[] = [];
+  for (let v = RING_STEP; v <= max + 0.001; v += RING_STEP) rings.push(v);
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={interactive ? () => setHover(null) : undefined}>
-        {rings.map((f, ri) => (
-          <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, max * f).join(",")).join(" ")} />
+      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
+        {rings.map((v, ri) => (
+          <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, v).join(",")).join(" ")} />
         ))}
+        {/* escala: valor de cada anel, lido no eixo de cima */}
+        {rings.map((v, ri) => {
+          const [rx, ry] = point(0, v);
+          return <text key={`rv${ri}`} className="vr-radar-ringval" x={rx + 4} y={ry + 3}>{v}</text>;
+        })}
         {dims.map((d, i) => {
           const [ax, ay] = point(i, max);
           const lx = cx + (R + 10) * Math.cos(angle(i));
@@ -1737,14 +1751,14 @@ function RadarSvg({ dims, series, max, answered, total, interactive = true, hidd
           const [px, py] = point(hover, s.values[hover] ?? 0);
           return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
         })}
-        {/* áreas invisíveis por dimensão (hover) — só no gráfico interativo (facilitador) */}
-        {interactive && dims.map((_, i) => {
+        {/* áreas invisíveis por dimensão (hover) — o aluno também explora o gráfico */}
+        {dims.map((_, i) => {
           const [ex, ey] = point(i, max);
           return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
         {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
-        {interactive && hover !== null && (() => {
+        {hover !== null && (() => {
           const [ox, oy] = point(hover, max);
           const w = 176, h = 60 + Math.max(1, vis.length) * 15;
           const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
@@ -1766,7 +1780,7 @@ function RadarSvg({ dims, series, max, answered, total, interactive = true, hidd
         })()}
       </svg>
       <div className="vr-radar-legend">
-        {series.map((s) => (interactive ? (
+        {series.map((s) => (canFilter ? (
           <button key={s.name} type="button" className="vr-radar-leg" data-off={hiddenSet.has(s.name) || undefined}
             onClick={() => onToggle?.(s.name)} title="Clique para mostrar/ocultar esta série (replica para os alunos)">
             <i style={{ background: s.color }} />{s.name}
