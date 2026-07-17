@@ -42,6 +42,16 @@ function initReveal(root: HTMLElement): Cleanup {
 /** Máquina de escrever: o texto se escreve ao entrar em tela. */
 function initTypewriter(root: HTMLElement): Cleanup {
   const timers: number[] = [];
+  /* A fonte fica AQUI, não no DOM. O init precisa esvaziar o elemento (senão o
+     texto pisca inteiro antes de começar), então o DOM não pode ser também o
+     lugar onde a fonte é guardada: um segundo init leria o vazio que o primeiro
+     deixou e gravaria vazio como fonte — o texto sumiria de vez, e não só até o
+     próximo reload. Acontecia de verdade, via HMR: bastava o efeito reiniciar
+     com a seção fora de tela, quando o observer ainda não digitou nada e o
+     elemento está vazio esperando. O cleanup devolve o texto para fechar o
+     ciclo e deixar o DOM como encontrou. */
+  const fonte = new Map<HTMLElement, string>();
+
   const io = new IntersectionObserver(
     (entries) => {
       for (const e of entries) {
@@ -49,9 +59,8 @@ function initTypewriter(root: HTMLElement): Cleanup {
         const el = e.target as HTMLElement;
         io.unobserve(el);
 
-        const full = el.dataset.typeText || el.textContent || "";
+        const full = fonte.get(el) || "";
         const speed = +(el.dataset.typeSpeed || 18);
-        el.textContent = "";
         el.classList.add("is-typing");
 
         let i = 0;
@@ -69,14 +78,20 @@ function initTypewriter(root: HTMLElement): Cleanup {
   );
 
   root.querySelectorAll<HTMLElement>("[data-type]").forEach((el) => {
-    // Guarda o texto e esvazia já, senão ele pisca inteiro antes de começar.
-    // A altura é reservada pela camada-fantasma no DOM, não por cálculo aqui.
-    el.dataset.typeText = el.textContent || "";
+    // Esvazia já, senão o texto pisca inteiro antes de começar. A altura é
+    // reservada pela camada-fantasma no DOM, não por cálculo aqui.
+    fonte.set(el, el.textContent || "");
     el.textContent = "";
     io.observe(el);
   });
 
-  return () => { io.disconnect(); timers.forEach(clearTimeout); };
+  return () => {
+    io.disconnect();
+    timers.forEach(clearTimeout);
+    // Devolve o texto: sem isto o elemento fica vazio para quem vier depois —
+    // seja um novo init, seja o usuário se a digitação for interrompida no meio.
+    fonte.forEach((txt, el) => { el.textContent = txt; });
+  };
 }
 
 function initNav(root: HTMLElement): Cleanup {

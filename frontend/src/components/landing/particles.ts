@@ -83,9 +83,14 @@ const HUE_K = 0.36;     // quanto o matiz corre por pixel
 const HUE_W = 22;       // e por segundo — é o que troca a cor sozinho
 const LERP = 0.14;      // suavização do cursor: o anel segue, não teleporta
 
+/* Canvas não enxerga custom property, então a rampa aparece aqui em RGB cru —
+   é a única duplicação de token do módulo. Os pontinhos acompanham --ink
+   (#f4f5f7): no tema escuro eles são claros sobre o fundo, a inversão exata do
+   quase-preto sobre branco que estava aqui. Os riscos do rodapé não mudam:
+   caem sobre --panel, que segue escuro. */
 const PALETTE: Record<Variant, string[]> = {
-  specks: ["18,19,23"],                                   // só a camada de pontinhos
-  grid: ["18,19,23"],
+  specks: ["244,245,247"],                                // só a camada de pontinhos
+  grid: ["244,245,247"],
   stars: ["90,140,255", "150,190,255", "255,255,255"],
 };
 
@@ -102,7 +107,13 @@ function make(v: Variant, w: number, h: number, i: number, n: number): P {
       ...base,
       x: gx * w + (Math.sin(i * 12.9) * 0.5 + 0.5) * (w / cols),
       y: gy * h + (Math.sin(i * 78.2) * 0.5 + 0.5) * (h / rows),
-      vx: 0, vy: 0, r: 1, c, a: 0.5 + Math.sin(i) * 0.3,
+      // Deriva para a direita: ~0.35 px/frame (≈21 px/s), com ±15% por
+      // partícula para o campo não andar como um bloco rígido. O toro no tick()
+      // reinsere quem sai pela direita — o fluxo é infinito de graça. A deriva
+      // vertical mínima mantém o respiro que a grade já tinha.
+      vx: 0.32 + (Math.sin(i * 5.3) * 0.5 + 0.5) * 0.1,
+      vy: (Math.random() - 0.5) * 0.05,
+      r: 1, c, a: 0.5 + Math.sin(i) * 0.3,
     };
   }
   if (v === "stars") {
