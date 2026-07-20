@@ -614,9 +614,20 @@
 /* Os painéis são tela cheia, então texto e arte crescem para preencher melhor
    (pedido). Escopado à pilha de propósito: a mesma .lp-cap serve a seção de API,
    que deve seguir no tamanho normal. */
+/* 46ch espremia o parágrafo em quatro linhas curtas com meia coluna sobrando ao
+   lado — num painel de tela cheia isso lê como texto apertado, não como medida
+   de leitura. 60ch respira e continua dentro da faixa confortável; nos painéis
+   a coluna é que passa a ser o limite real na maioria das larguras. */
 .lp-capstack-panel .lp-cap-txt {
-  gap: 18px;
-  max-width: 46ch;
+  gap: 22px;
+  max-width: 60ch;
+}
+/* Com a coluna mais larga, algumas linhas passaram a terminar com uma palavra
+   sozinha ("...ran at / it"). `pretty` faz o navegador reequilibrar as últimas
+   linhas para evitar a órfã; onde não houver suporte, quebra como antes. */
+.lp-capstack-panel .lp-cap-txt p,
+.lp-pbl-line {
+  text-wrap: pretty;
 }
 .lp-capstack-panel .lp-cap-txt h3 {
   font-size: clamp(1.7rem, 2.9vw, 2.7rem);
@@ -637,13 +648,702 @@
   width: clamp(96px, 9.5vw, 140px);
   font-size: clamp(2rem, 3.8vw, 3.2rem);
 }
-.lp-capstack-panel .lp-net {
-  transform: scale(1.9);
+/* ── Painel de PBL: a cena presa na tela ─────────────────────────────────────
+   O painel fica ALTO (--pbl-scroll, vindo do TSX) e um filho sticky de 100vh
+   segura a cena — é o CSS que faz o scroll-lock, não o `pin` do ScrollTrigger,
+   que quebraria a sanfona (ver PblPanel em Landing.tsx). A altura extra é o que
+   CRIA o scroll que o `scrub` consome: mexer em --pbl-scroll muda a velocidade
+   da cena e o range do trigger de uma vez só.
+
+   Tudo aqui é o estado de REPOUSO, que é o estado FINAL da cena: grupos
+   formados, leitura à mostra, facilitador no lugar. Os `.from()` do GSAP é que
+   puxam para a grade e para o apagado. Sem JS — reduced-motion, mobile, ou o
+   chunk falhando — a cena aparece pronta em vez de invisível. */
+.lp-pbl-panel {
+  height: var(--pbl-scroll);
+  display: block;
+  /* OBRIGATÓRIO junto do display:block. O .lp-capstack-panel centra o conteúdo
+     com align-content:center para o painel de 100vh, e desde o Chrome 123 o
+     align-content vale TAMBÉM em container block — trocar só o display deixa a
+     regra viva e ela centra o filho sticky na caixa de 320vh (offsetTop 990px
+     numa tela de 900), o que empurra a cena para fora e mata o grude. */
+  align-content: normal;
+  /* O brilho de canto do nth-child é dimensionado pela caixa, e numa caixa de
+     320vh ele viraria um borrão gigante quase todo fora da tela. Aqui o painel
+     fica liso e o brilho vai para o filho sticky, que tem 100vh. */
+  background: var(--bg);
 }
-/* O card da rede flutua sem painel, como o do desktop. */
-.lp-card[data-fill="flat"]:has(.lp-net) {
-  background: none;
-  border: none;
+/* O fade da emenda é 10% da caixa — em 320vh isso seria ~32vh de conteúdo
+   apagado enquanto a cena roda. Em px o mesmo efeito, preso à borda. */
+.lp-pbl-panel:not(:first-child) {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 80px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 80px);
+}
+/* MESMAS colunas e MESMO vão do .lp-cap, só que espelhados: a cena à esquerda
+   e o texto à direita. Manter a proporção 1.15fr/1fr é o que faz este capítulo
+   ler como os outros em vez de como uma seção estranha — e é o que devolve à
+   coluna de texto a largura que ela tinha (com 32% o parágrafo saía espremido
+   em cinco linhas curtas). Ao mexer no grid do .lp-cap, mexer aqui junto. */
+.lp-pbl-stick {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: clamp(24px, 5vw, 90px);
+  align-items: center;
+  padding-block: clamp(48px, 8vh, 96px);
+  transform-origin: center top;   /* o recuo de profundidade afunda, não encolhe */
+  isolation: isolate;             /* contexto próprio para o brilho do ::before */
+}
+/* O brilho do capítulo. Vive AQUI e não no painel porque o painel tem 320vh e
+   um gradiente em % viraria um borrão gigante quase todo fora da tela — mas ele
+   precisa SANGRAR até a borda: preso à coluna de conteúdo, a margem esquerda
+   dele desenhava uma linha vertical nítida ao lado do título, que cortava a
+   seção em duas. A margem negativa estica a caixa até 100vw, como o painel. */
+.lp-pbl-stick::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin-inline: calc(50% - 50vw);
+  background: radial-gradient(65% 55% at 0% 0%, color-mix(in srgb, var(--focus) 13%, transparent), transparent 58%);
+  pointer-events: none;
+}
+/* Acima do brilho: sem isto o conteúdo (não posicionado) pintaria por baixo. */
+.lp-pbl-stick > * {
+  position: relative;
+  z-index: 1;
+}
+/* Cartão de abertura: o título sozinho, em corpo de display, centrado sobre o
+   stick inteiro — por isso ABSOLUTO, e não uma célula do grid: centrado na
+   tela, e não numa das duas colunas. O seletor é mais específico que o
+   `.lp-pbl-stick > *` acima, que põe tudo em relative.
+
+   Repouso ESCONDIDO, ao contrário do resto da cena: sem JS não existe abertura
+   a encenar, e o que deve aparecer é o estado final (sala montada, texto na
+   direita). O `.fromTo` do timeline é que o traz para visível no progress 0. */
+.lp-pbl-stick > .lp-pbl-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding-inline: var(--gutter);
+  /* Não intercepta o cursor: o campo de partículas e os links atrás seguem
+     alcançáveis mesmo enquanto o título cobre a tela. */
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+/* O título em si. Mesmos valores do h1 do hero: é o corpo de display da
+   página, não um tamanho inventado para esta seção. */
+.lp-pbl-intro-t {
+  max-width: 18ch;
+  text-align: center;
+  font-size: var(--fs-display);
+  font-weight: 450;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  text-wrap: balance;
+  color: var(--ink);
+}
+/* O destaque da última palavra do título ("PBL"). Usa o acento da página — a
+   mesma cor que o resto da landing reserva para o que importa. */
+.lp-pbl-intro-hl {
+  color: var(--accent);
+}
+
+/* O palco ESTICA na linha (o resto do stick centra), senão ele teria só a
+   altura do conteúdo e as frações verticais colapsariam. */
+.lp-pbl-stage {
+  position: relative;
+  align-self: stretch;
+  min-height: 460px;
+}
+.lp-pbl-room {
+  position: absolute;
+  inset: 0;
+}
+
+/* O problema, no centro do palco: o núcleo em volta do qual os grupos se
+   organizam. Largura em px (não em %) porque o que manda aqui é a legibilidade
+   da frase, que não deve encolher junto com o palco. Centrado por margin
+   negativa, como os avatares — transform fica reservado ao GSAP. */
+.lp-pbl-problem {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  /* 230px é o teto: mais que isso e o card encosta nos grupos que o ladeiam
+     (medido — a folga cai para menos de 10px de cada lado). O caso é o texto
+     mais longo da cena, então é ele que define a altura. */
+  width: 230px;
+  margin: -72px 0 0 -115px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.75);
+}
+.lp-pbl-problem-k {
+  margin-bottom: 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.lp-pbl-problem-t {
+  font-size: 0.92rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* Avatar. Centrado no ponto por margin NEGATIVA, não por translate: o transform
+   tem de ficar 100% do GSAP, senão o x/y dos tweens apagaria o translate de
+   centragem e cada avatar saltaria meio corpo ao começar a migrar.
+
+   O miolo é SLOT: o <i> é só o placeholder. Pôr um <img> dentro veste o avatar
+   com a foto da pessoa — a regra de :has abaixo tira o ícone sozinha, sem
+   precisar mexer no componente. */
+.lp-pbl-p {
+  position: absolute;
+  /* Token único: a centragem por margin negativa sai daqui, e os offsets de
+     grupo em PBL_OFFSETS (Landing.tsx) acompanham este número — a distância
+     entre vizinhos tem de passar de um diâmetro. Mexer aqui é mexer lá. */
+  --pbl-cw: 106px;
+  --pbl-ch: 32px;
+  /* Fator dos offsets de grupo. Vale 1px no desktop (o px cru do PBL_OFFSETS)
+     e encolhe no mobile junto com o chip — em palco estreito, offset de
+     desktop empilha gente por cima de gente. Multiplicar número por
+     comprimento é calc válido: calc(40 * 0.72px) = 29px. */
+  --pbl-k: 1px;
+  /* O grupo (--gx/--gy, fração do palco) e o lugar dentro dele (--ox/--oy, em
+     px) chegam do TSX; o calc mora aqui para o breakpoint poder remontá-lo. */
+  /* O fallback encadeado NÃO é enfeite: --gx/--gy chegam por estilo INLINE do
+     TSX, e propriedade customizada inline ganha de qualquer regra de folha —
+     inclusive de media query. Um override mobile em `--gx` seria simplesmente
+     ignorado (foi o que aconteceu: os grupos ficaram na posição de desktop e
+     quatro avatares caíam sobre o card). O breakpoint então escreve em
+     `--gx-m`, que ninguém define inline, e este var() a prefere quando existe. */
+  left: calc(var(--gx-m, var(--gx)) * 100% + var(--ox) * var(--pbl-k));
+  top: calc(var(--gy-m, var(--gy)) * 100% + var(--oy) * var(--pbl-k));
+  /* Largura FIXA, não `auto`: a centragem sai de margin negativa, que precisa
+     de metade de um número conhecido. Com largura variável por nome, cada
+     participante ficaria descentrado do seu ponto por uma quantidade
+     diferente, e o desenho dos grupos perderia o prumo. */
+  width: var(--pbl-cw);
+  height: var(--pbl-ch);
+  margin: calc(var(--pbl-ch) / -2) 0 0 calc(var(--pbl-cw) / -2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 8px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  color: var(--ink-2);
+  /* Separa o chip do que estiver atrás sem precisar de fundo opaco na cena. */
+  box-shadow: 0 0 0 4px var(--bg);
+}
+.lp-pbl-nome {
+  font-size: 0.76rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Slot de foto: opcional. Sem <img> o participante é só o nome — nenhum
+   círculo na cena. Com <img>, a miniatura entra ao lado do nome e o chip
+   abre espaço para ela. */
+.lp-pbl-p > img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+.lp-pbl-p:has(img) {
+  justify-content: flex-start;
+}
+
+/* Facilitador. Na GRADE ele é um avatar como qualquer outro — é o timeline que
+   lhe dá borda e cor de acento quando os grupos já estão formados, junto com o
+   anel e o crachá. Sem isso a cena entregaria o papel antes da hora, e o ponto
+   da grade inicial é justamente que ninguém está em destaque. */
+.lp-pbl-p-fac {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Contorno tracejado ACOMPANHANDO o chip: com o participante virando pílula,
+   um anel circular em volta dele sobraria nas pontas e faltaria nos lados. */
+.lp-pbl-fac-ring {
+  position: absolute;
+  inset: -6px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 999px;
+}
+.lp-pbl-fac-badge {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: 50%;
+  margin-left: -38px;    /* metade da largura fixa: centra sem transform */
+  width: 76px;
+  text-align: center;
+  font-family: var(--font);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+/* A leitura das habilidades vive na COLUNA DE TEXTO, não dentro do palco: no
+   palco ela disputava espaço com os grupos e com o problema, e o texto é que
+   tem lugar para uma lista. */
+.lp-pbl-read {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+}
+/* O filete divisório vive no CABEÇALHO, não no container. No container ele
+   aparecia durante toda a abertura: o que a timeline apaga são as linhas e o
+   cabeçalho, não a caixa em volta — então sobrava um risco solto sob o texto,
+   com o palco ainda vazio. Aqui ele nasce e some junto com o cabeçalho. */
+.lp-pbl-read-h {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* Inline (skill + o que a pessoa fez), não em duas linhas: são cinco itens
+   dentro da coluna de texto, e empilhar cada um em dois blocos empurraria o
+   remate para fora da tela travada. */
+.lp-pbl-line {
+  font-size: clamp(0.8rem, 0.95vw, 0.95rem);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.lp-pbl-skill {
+  font-weight: 600;
+  color: var(--focus);
+}
+/* O remate. Só cai no fim da cena, depois da leitura. */
+.lp-pbl-tag {
+  margin-top: 6px;
+  font-size: clamp(1rem, 1.3vw, 1.22rem);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* ── Painel de marca: a sala se veste ────────────────────────────────────────
+   Mesmo mecanismo do painel de PBL — painel alto (--skin-scroll) + filho
+   sticky de 100vh — pelo mesmo motivo: `pin` do ScrollTrigger quebraria a
+   sanfona (ver SkinPanel em Landing.tsx).
+
+   NENHUMA cor nova entra aqui. Superfície, texto e borda saem dos tokens da
+   página; a única cor livre é a da marca de demo, que chega por --accent
+   sobrescrito no escopo da cena. */
+.lp-skin-panel {
+  height: var(--skin-scroll);
+  display: block;
+  align-content: normal;   /* obrigatório junto do display:block — ver .lp-pbl-panel */
+  background: var(--bg);
+}
+.lp-skin-panel:not(:first-child) {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 80px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 80px);
+}
+.lp-skin-stick {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: clamp(14px, 1.8vh, 22px);
+  /* Assimétrico de propósito: mais em cima que embaixo. O conteúdo é centrado
+     na caixa, então a diferença entre os dois lados é o que desce o bloco —
+     e o título colado no topo era o que incomodava. */
+  padding-block: clamp(52px, 9vh, 112px) clamp(20px, 3vh, 40px);
+  transform-origin: center top;
+  isolation: isolate;
+}
+.lp-skin-stick::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin-inline: calc(50% - 50vw);
+  background: radial-gradient(65% 55% at 100% 0%, color-mix(in srgb, var(--focus) 13%, transparent), transparent 58%);
+  pointer-events: none;
+}
+.lp-skin-stick > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* A CENA é o escopo do --accent. Sobrescrito aqui, ele desce por herança para
+   tudo que é temático (logo, anel do falante, mic ativo, CTA, indicador de
+   ao vivo, hex do config) e para NADA fora daqui — o resto da landing segue
+   com o vermelho da marca do projeto. É o "um único ponto de verdade". */
+.lp-skin-scene {
+  --accent: #4f8cff;   /* repouso = primeira marca, para o caso sem JS */
+  width: 100%;
+  /* Teto de largura: sem ele a sala esticava até ~700px e, com tiles em
+     proporção fixa, largura vira ALTURA — o conjunto passava a ocupar a tela
+     inteira e não sobrava folga para o `align-content: center` centralizar
+     coisa alguma. Limitar a largura aqui é o que devolve a margem vertical. */
+  max-width: 1080px;
+  display: grid;
+  grid-template-columns: 0.82fr 1.18fr;
+  gap: clamp(20px, 3vw, 52px);
+  /* center, não stretch: esticar o painel de config até a altura da sala o
+     transformava numa caixa quase toda vazia — o mock tem três campos, não
+     dá corpo para 470px. Compacto e centrado na linha, ele lê como o que é. */
+  align-items: center;
+}
+
+/* ── Painel de config: estética de código, discreta ── */
+.lp-skin-cfg {
+  display: grid;
+  gap: 10px;
+  padding: clamp(16px, 1.6vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: clamp(0.68rem, 0.82vw, 0.82rem);
+  line-height: 1.5;
+}
+.lp-skin-cfg-h {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lp-skin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+.lp-skin-k {
+  flex: none;
+  width: 11ch;
+  color: var(--code-key);
+}
+.lp-skin-v {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+}
+.lp-skin-str {
+  color: var(--code-str);
+}
+/* A amostra e o hex são o mesmo valor que a sala está usando — a cor sai da
+   custom property, não de uma cópia. */
+.lp-skin-sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.lp-skin-hex {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;   /* o hex não dança de largura ao trocar */
+}
+
+/* Slot do logo: hoje um glifo, amanhã um <img>/<svg> da marca. O quadrado e o
+   recorte já estão prontos, então trocar o miolo não mexe em layout. */
+.lp-skin-logo {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+.lp-skin-logo > img,
+.lp-skin-logo > svg {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.lp-skin-logo--room {
+  width: 30px;
+  height: 30px;
+  font-size: 0.9rem;
+}
+
+/* ── A sala. Tudo aqui é CONSTANTE: o ciclo de marcas não altera uma única
+   medida deste bloco, só cor, glifo e nome. ── */
+.lp-skin-room {
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+  box-shadow: 0 26px 60px -30px rgb(0 0 0 / 0.85);
+}
+.lp-skin-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.lp-skin-brandname {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+.lp-skin-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lp-skin-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.lp-skin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+}
+/* Proporção fixa: é o que garante que o tile não mude de altura quando o nome
+   trocar de comprimento — a prova visual da seção depende disso. */
+.lp-skin-tile {
+  position: relative;
+  /* 16/9 e não 16/10: com quatro tiles em duas linhas, cada centímetro de
+     altura do tile entra dobrado na altura da sala. */
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  /* Fica de fundo enquanto o retrato não chegou (os <img> são lazy). */
+  background: linear-gradient(150deg, var(--bg-2), var(--bg));
+  /* Sem overflow:hidden de propósito: o anel do falante vive em `inset: -2px`,
+     ou seja FORA do tile, e seria recortado. Quem arredonda o retrato é o
+     border-radius do próprio <img>. */
+}
+/* O tile é 16/9 e os retratos são quase quadrados, então o `cover` precisa
+   cortar na vertical. `center 22%` puxa o enquadramento para cima: o corte sai
+   do queixo e do topo da cabeça, não do rosto. Ao trocar um arquivo por outro
+   com enquadramento diferente, é este número que se ajusta. */
+.lp-skin-tile > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 22%;
+  border-radius: inherit;
+}
+/* Anel do falante: o único tile temático, e ele muda de COR, não de tamanho —
+   o inset negativo mantém o anel fora do fluxo, sem empurrar vizinho. */
+.lp-skin-tile[data-speaking]::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  pointer-events: none;
+}
+.lp-skin-tile-n {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  /* Mais opaco desde que há retrato atrás: sobre uma foto clara, 72% deixava a
+     legenda ilegível. O blur separa a pílula do fundo sem escurecê-la mais. */
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(3px);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.lp-skin-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}
+.lp-skin-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding-inline: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+/* Mic ativo e "levantar a mão": os dois estados temáticos da barra. */
+.lp-skin-btn--on,
+.lp-skin-btn--cta {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+.lp-skin-btn--cta {
+  margin-left: auto;
+}
+/* Sair é PERIGO, não marca: --accent-deep não é sobrescrito pelo escopo. */
+.lp-skin-btn--leave {
+  border-color: color-mix(in srgb, var(--accent-deep) 60%, transparent);
+  background: color-mix(in srgb, var(--accent-deep) 20%, transparent);
+  /* Clareado contra o fundo escuro pela mesma razão do --accent da página:
+     o #e11d2a puro dá 4.1:1 aqui e reprova AA em texto pequeno. */
+  color: color-mix(in srgb, var(--accent-deep) 45%, var(--ink));
+}
+
+.lp-skin-foot {
+  display: grid;
+  gap: 10px;
+}
+.lp-skin-note {
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-wrap: pretty;
+}
+
+/* Sem cena: mesma regra do painel de PBL — sem animação o scroll-lock não se
+   justifica, e o repouso já é uma marca aplicada e legível. */
+@media (prefers-reduced-motion: reduce), (max-width: 1000px) {
+  .lp-skin-panel {
+    height: auto;
+    min-height: 100vh;
+  }
+  .lp-skin-stick {
+    position: static;
+    height: auto;
+    min-height: 100vh;
+  }
+}
+@media (max-width: 1000px) {
+  .lp-skin-panel {
+    min-height: 0;
+  }
+  .lp-skin-stick {
+    min-height: 0;
+    padding-block: 0;
+  }
+  .lp-skin-stick::before {
+    display: none;
+  }
+  /* Empilha: config em cima, sala embaixo. Em duas colunas estreitas o mock de
+     config quebra linha no meio dos campos e a sala fica ilegível. */
+  .lp-skin-scene {
+    grid-template-columns: 1fr;
+  }
+  .lp-skin-bar {
+    flex-wrap: wrap;
+  }
+  .lp-skin-btn--cta {
+    margin-left: 0;
+  }
+}
+
+/* Sem cena: o scroll-lock não se justifica quando não há o que tocar. O painel
+   volta a ser um painel normal e o conteúdo, que já está no estado final,
+   simplesmente aparece. Vale para reduced-motion em qualquer largura e para
+   mobile, onde prender a tela no toque é hostil — e são as mesmas duas
+   condições que impedem o timeline de montar no TSX. */
+@media (prefers-reduced-motion: reduce), (max-width: 1000px) {
+  .lp-pbl-panel {
+    height: auto;
+    min-height: 100vh;
+  }
+  .lp-pbl-stick {
+    position: static;
+    height: auto;
+    min-height: 100vh;
+  }
+}
+@media (max-width: 1000px) {
+  .lp-pbl-panel {
+    min-height: 0;
+  }
+  .lp-pbl-stick {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding-block: 0;
+  }
+  .lp-pbl-stick::before {
+    display: none;   /* o brilho é do capítulo em tela cheia, não da pilha curta */
+  }
+  /* O palco vira bloco em fluxo: sem o stick de 100vh não há altura de linha
+     para esticar contra, e o `inset: 0` do room colapsaria para nada. */
+  .lp-pbl-stage {
+    min-height: 0;
+    /* Não encolher: as posições dos grupos são FRAÇÃO desta altura, mas os
+       lugares dentro de cada grupo são px — baixar para 510px comprimia as
+       frações sem encolher os chips e dois pares passavam a se sobrepor
+       (medido). O respiro entre o diagrama e o texto é o preço disto. */
+    height: 560px;
+  }
+  .lp-pbl-room {
+    position: relative;
+    inset: auto;
+    height: 100%;
+  }
+  /* ── Arranjo vertical do mobile ───────────────────────────────────────────
+     Os três grupos LADEANDO o card é uma composição de palco largo: numa
+     coluna de celular (~360px, e ~280px num aparelho de 320) não há como ter
+     dois grupos nos flancos e um card de texto entre eles — medido, avatares
+     vazavam do palco e quatro caíam por cima do card.
+
+     Aqui a cena vira VERTICAL: dois grupos no topo, o facilitador abaixo
+     deles, o card no meio e o terceiro grupo embaixo. Só as frações mudam —
+     os offsets dentro de cada grupo continuam vindo do TSX. */
+  .lp-pbl-p {
+    --pbl-cw: 92px;
+    --pbl-ch: 28px;
+    --pbl-k: 0.82px;
+  }
+  .lp-pbl-nome {
+    font-size: 0.7rem;
+  }
+  .lp-pbl-p[data-c="0"] { --gx-m: 0.22; --gy-m: 0.12; }
+  .lp-pbl-p[data-c="1"] { --gx-m: 0.78; --gy-m: 0.12; }
+  .lp-pbl-p[data-c="2"] { --gx-m: 0.5;  --gy-m: 0.75; }
+  .lp-pbl-p[data-c="f"] { --gx-m: 0.5;  --gy-m: 0.26; }
+  .lp-pbl-problem {
+    top: 44%;
+    width: 168px;
+    margin-left: -84px;
+    margin-top: -68px;
+  }
 }
 
 /* ── Fogueira (card "Built around PBL") ──────────────────────────────────────
@@ -836,70 +1536,6 @@
 @keyframes lp-flick-b {
   0% { transform: scaleY(0.95) scaleX(1.05); }
   100% { transform: scaleY(1.16) scaleX(0.88) translateX(-1px); }
-}
-
-/* ── Rede de PBL (card "Built around PBL") ───────────────────────────────────
-   Problema no centro, participantes em volta, arestas ligando. Nós e arestas
-   posicionados por dados (ProblemNet em Landing.tsx); aqui só a forma. Estado
-   de repouso = rede inteira ligada, com as habilidades visíveis. */
-.lp-net {
-  position: relative;
-  width: 220px;
-  height: 160px;
-}
-/* Aresta: linha entre dois nós, origem à esquerda (o nó A) para o GSAP
-   "desenhá-la" por scaleX. Centrada na vertical por margin, então o transform
-   fica só com o rotate calculado. */
-.lp-net-edge {
-  position: absolute;
-  height: 2px;
-  margin-top: -1px;
-  border-radius: 1px;
-  transform-origin: left center;
-}
-.lp-net-spoke {
-  background: color-mix(in srgb, var(--focus) 38%, var(--line-2));
-}
-.lp-net-link {
-  background: color-mix(in srgb, var(--focus) 55%, transparent);
-}
-/* Nó: ponto centrado no ponto por margin (não transform), para o scale do GSAP
-   ficar limpo. Pulso suave de vida. */
-.lp-net-node {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  margin: -6px 0 0 -6px;
-  border-radius: 50%;
-  background: var(--ink-2);
-  animation: lp-net-pulse 2.6s ease-in-out infinite;
-}
-/* O problema, no centro: maior, anel de acento, brilho. */
-.lp-net-node--hub {
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
-  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: none;
-}
-/* Etiqueta de habilidade, abaixo do nó — a leitura da IA. */
-.lp-net-skill {
-  position: absolute;
-  top: 9px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  font-family: var(--font);
-  font-size: 7.5px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--focus);
-}
-@keyframes lp-net-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 7px color-mix(in srgb, var(--focus) 32%, transparent); }
 }
 
 /* Mobile: desliga o sticky e o 100vh — empilhamento normal, sem cobrir. Os
@@ -1292,34 +1928,38 @@
    uma UI de produto (a mesma regra que mantém a seção de prova vazia). Base
    scaleX(1) = escrito; o GSAP faz .from(scaleX 0). A última é curta e carrega
    o cursor. */
-.lp-boot-line {
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--focus) 65%, var(--ink));
-  transform-origin: left;
+/* O que a tela mostra ao ligar. Substitui as três barras abstratas: elas
+   sugeriam "algum texto", e o ponto da seção é que a plataforma é a DO CLIENTE
+   — dizer isso por extenso vale mais que sugerir.
+
+   z-index para ficar sobre o .lp-boot-glow, que é irmão absoluto. */
+.lp-boot-say {
   position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
 }
-
-.lp-boot-line:nth-child(2) {
-  width: 64%;
+/* 11px é o teto: a tela tem 88px com 12px de padding de cada lado, sobrando 64
+   para "Your LMS" mais o cursor. O painel da sanfona escala o conjunto em 1.7,
+   então o que se lê são ~19px. */
+.lp-boot-text {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--focus) 55%, var(--ink));
+  /* REPOUSO = escrito por inteiro. É o estado que se vê sem JS e sob
+     reduced-motion; o .from() do GSAP é que parte do recorte fechado. */
+  clip-path: inset(0 0 0 0);
 }
-
-.lp-boot-line:nth-child(3) {
-  width: 82%;
-}
-
-.lp-boot-line:nth-child(4) {
-  width: 40%;
-}
-
-/* Cursor no fim da última linha, piscando sempre (reduced-motion o deixa fixo). */
-.lp-boot-line:nth-child(4)::after {
-  content: "";
-  position: absolute;
-  right: -7px;
-  top: -1px;
+/* Cursor, piscando sempre (reduced-motion o deixa fixo, como as demais). */
+.lp-boot-caret {
   width: 3px;
-  height: 6px;
+  height: 10px;
   background: var(--focus);
   animation: lp-caret 1s steps(2) infinite;
 }
@@ -1459,6 +2099,44 @@
   max-width: var(--maxw);
   margin-inline: auto;
   padding: var(--section-y) var(--gutter);
+}
+
+/* Campo de riscos atrás do "How it works". O painel da sanfona já é `sticky`,
+   logo já é elemento posicionado — o inset resolve contra ele, e como o painel
+   sangra de borda a borda o campo cobre a largura da tela inteira.
+
+   Fica ABAIXO do conteúdo (z-index 0 contra 1) e sem eventos de ponteiro: é
+   fundo, não superfície clicável. */
+.lp-steps-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  /* O campo APAGA na faixa central, que é onde o título e os três parágrafos
+     ficam. Sem isto os riscos passam por cima das palavras e o texto fica
+     picotado — o campo do rodapé pode ser cheio porque não há texto sobre ele;
+     aqui há. Cheio nas bordas (que é onde ele dá profundidade), quase nada no
+     meio (que é onde ele atrapalha). */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    rgb(0 0 0 / 0.1) 30%,
+    rgb(0 0 0 / 0.1) 72%,
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    rgb(0 0 0 / 0.1) 30%,
+    rgb(0 0 0 / 0.1) 72%,
+    #000 100%
+  );
+}
+.lp-steps-panel .lp-panel-in {
+  position: relative;
+  z-index: 1;
 }
 
 .lp-steps-grid {
@@ -1656,19 +2334,6 @@
 .lp-foot {
   padding: 0 var(--gutter) 28px;
   overflow: clip;
-}
-
-.lp-foot-card {
-  height: clamp(150px, 20vw, 260px);
-  border-radius: 28px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  overflow: clip;
-}
-
-.lp-foot-field {
-  width: 100%;
-  height: 100%;
 }
 
 .lp-foot-grid {

@@ -90,7 +90,7 @@ const API_CAP = {
      your LMS" é verdadeiro nos dois mundos.
    - PBL e white-label são recursos reais (branding por tenant: normalize_branding
      no backend, applyBranding no front; FAQ já afirma o mesmo). */
-const CAPS: { t: string; d: string; icon: string; anim?: "boot" | "network" }[] = [
+const CAPS: { t: string; d: string; icon: string; anim?: "boot" | "pbl" | "skin"; tag?: string }[] = [
   {
     icon: "fa-plug",
     anim: "boot",
@@ -99,21 +99,58 @@ const CAPS: { t: string; d: string; icon: string; anim?: "boot" | "network" }[] 
   },
   {
     icon: "fa-people-group",
-    anim: "network",
+    anim: "pbl",
     t: "Built around PBL",
-    d: "The room is shaped by the method, not the other way around: a real problem, small working groups, and a read-back of the skills each person showed. Not a webinar with breakout rooms bolted on.",
+    /* O texto está PARTIDO em `d` + `tag` porque a cena usa os dois em tempos
+       diferentes: o corpo fica parado ao lado enquanto a cena roda, e a última
+       frase é a estocada — ela só cai depois que os grupos se formaram e a
+       leitura saiu. Junto num parágrafo só, o remate chegaria antes da cena que
+       o justifica. Nada foi reescrito: é a mesma frase, separada. */
+    d: "The room is shaped by the method, not the other way around: a real problem, small working groups, and a read-back of the skills each person showed.",
+    tag: "Not a webinar with breakout rooms bolted on.",
   },
   {
     icon: "fa-palette",
+    anim: "skin",
     t: "Your brand, end to end",
-    d: "Logo, color, and product name are set per organization. Participants only ever see your brand — the same room, dressed as yours, configured through the same API.",
+    /* Partido como no card de PBL: o corpo fica ao lado enquanto a cena roda e
+       o remate cai no fim, depois de a troca de marcas já ter provado a frase.
+       Mesmo texto de antes, só separado. */
+    d: "Logo, color, and product name are set per organization — configured through the same API.",
+    tag: "The same room, dressed as yours. Participants only ever see your brand.",
   },
 ];
 
+/* Os três passos são sobre CONEXÃO — como a plataforma fala com o produto e o
+   quanto isso custa a quem integra. Cada afirmação sai de algo que existe no
+   backend, e não de promessa:
+   - a chave única é o `X-API-Key: bwl_live_...` de tenancy.py (o mesmo do curl
+     mostrado logo acima nesta página);
+   - `external_ref` é campo de RoomCreate, e `POST /rooms/bookings/sync` está
+     documentado como "idempotent on external_ref" — daí o "pode repetir";
+   - o `guest_token` devolvido na criação é o que faz o aluno entrar por link,
+     sem conta deste lado.
+
+   NADA de versão de LTI aqui, pela mesma razão registrada em CAPS: hoje o
+   launch é LTI 1.1/SCORM via ScormCloud e o 1.3 nativo é roadmap — número de
+   versão nesta página envelhece ou mente. O que está escrito vale nos dois
+   mundos porque descreve a API, que é nossa. */
 const STEPS = [
-  { n: "01", t: "Set up the room", d: "Pick the problem, define the groups, and open the session. It takes under a minute." },
-  { n: "02", t: "The group solves it", d: "People discuss, disagree, and land on an answer. The AI follows along quietly." },
-  { n: "03", t: "Everyone gets their read", d: "The report comes out per person and per group, with what actually showed up in the session." },
+  {
+    n: "01",
+    t: "One key to connect",
+    d: "An API key is the whole setup — nothing to install, no service to host. A single POST opens a room and hands back the link your learners will use.",
+  },
+  {
+    n: "02",
+    t: "Send your own IDs",
+    d: "Every room can carry the reference your platform already uses for that lesson. The sync call is idempotent on it, so your LMS can retry as often as it likes and never open a duplicate.",
+  },
+  {
+    n: "03",
+    t: "Learners just click",
+    d: "They come in from a link inside your platform — no account here, no second login — and everything the session records stays tied to the reference you sent.",
+  },
 ];
 
 const FAQ = [
@@ -295,8 +332,13 @@ function BootDevice() {
         // 3) o gabinete acende (LED) e a tela liga, quase juntos
         .from(".lp-boot-led", { autoAlpha: 0.25, duration: 0.12 }, "<")
         .from(".lp-boot-glow", { autoAlpha: 0, duration: 0.3 }, "-=0.02")
-        // 4) o texto se escreve
-        .from(".lp-boot-line", { scaleX: 0, transformOrigin: "left", duration: 0.24, stagger: 0.15 }, "-=0.02");
+        /* 4) o nome se escreve na tela. clip-path, e NÃO scaleX como as barras
+              abstratas de antes: escalar texto na horizontal estica os glifos e
+              a palavra chega deformada. O recorte revela da esquerda para a
+              direita sem tocar na forma da letra — e, por ser recorte, também
+              não mexe no layout. */
+        .from(".lp-boot-text", { clipPath: "inset(0 100% 0 0)", duration: 0.34 }, "-=0.02")
+        .from(".lp-boot-caret", { autoAlpha: 0, duration: 0.1 }, "<");
       // Um pouco mais lento no conjunto — timeScale retarda tudo em bloco, sem
       // reequilibrar cada duração. 0.72 ≈ 40% mais devagar.
       tl.timeScale(0.72);
@@ -318,9 +360,14 @@ function BootDevice() {
         <div className="lp-monitor">
           <div className="lp-monitor-screen">
             <span className="lp-boot-glow" />
-            <span className="lp-boot-line" />
-            <span className="lp-boot-line" />
-            <span className="lp-boot-line" />
+            {/* O cursor fica FORA do elemento recortado: quem se escreve é o
+                texto (por clip-path), e um cursor dentro do recorte só
+                apareceria no fim, junto com a última letra. Do lado de fora ele
+                pisca desde o começo, como num terminal esperando. */}
+            <span className="lp-boot-say">
+              <span className="lp-boot-text">Your LMS</span>
+              <span className="lp-boot-caret" />
+            </span>
           </div>
           <div className="lp-monitor-neck" />
           <div className="lp-monitor-base" />
@@ -332,69 +379,698 @@ function BootDevice() {
   );
 }
 
-/** Card de PBL: 5 bonecos sentados em roda de fogueira, o fogo (CSS) tremulando
-    sempre. Ao rolar, um deles se levanta e um balão de fala surge na altura da
-    cabeça — `scrub` liga o levantar ao scroll ("ao ir abaixando a tela"). A
-    arte é CSS (não SVG); estado de repouso (reduced-motion) = todos sentados,
-    sem balão. */
-/* Rede do card de PBL: um problema no centro (hub), participantes em volta. As
-   arestas 0→n são os "raios" (todos engajam o problema); as demais formam o anel
-   de diálogo (peer a peer). Habilidade que cada nó revela ao lado — a leitura da
-   IA. Genéricas e ilustrativas (um diagrama, não dado real de ninguém). */
-const NET_NODES: { x: number; y: number; hub?: boolean; skill?: string }[] = [
-  { x: 110, y: 82, hub: true },
-  { x: 110, y: 22, skill: "leads" },
-  { x: 172, y: 54, skill: "questions" },
-  { x: 150, y: 132, skill: "mediates" },
-  { x: 68, y: 132, skill: "listens" },
-  { x: 48, y: 54, skill: "synthesizes" },
-];
-const NET_EDGES: [number, number][] = [
-  [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], // raios até o problema
-  [1, 2], [2, 3], [3, 4], [4, 5], [5, 1], // anel de diálogo
+
+
+/* ── Cena de PBL ("Built around PBL") ────────────────────────────────────────
+   A seção prende na tela e a cena roda pelo scroll. O payload é a MIGRAÇÃO:
+   a turma começa numa grade fria de webinar (todo mundo igual, de frente para
+   o palco) e, conforme o scroll avança, se reagrupa AO REDOR do problema —
+   que é o núcleo da cena e fica no centro dela. É a frase do card encenada:
+   a sala tem a forma do método.
+
+   O grupo é a AGLOMERAÇÃO, não um contorno: não há elipse nem anel desenhado
+   em volta de ninguém. O que diz "isto é um grupo" é a proximidade.
+
+   A posição de cada grupo é FRAÇÃO do palco (0..1), mas o lugar de cada pessoa
+   DENTRO do grupo é PX. Os dois têm de ser assim: a fração deixa a composição
+   acompanhar o tamanho do palco, e o px mantém a distância entre vizinhos —
+   em fração, um palco estreito faria os avatares (que têm tamanho fixo) se
+   sobreporem justamente onde o agrupamento precisa ser legível. */
+const PBL_COLS = 4;
+
+/** Célula da grade inicial de webinar, row-major: uniforme e sem hierarquia,
+    que é o ponto da imagem — ninguém em destaque, nem o facilitador. */
+function pblGridAt(i: number) {
+  return { x: 0.16 + (i % PBL_COLS) * 0.226, y: 0.22 + Math.floor(i / PBL_COLS) * 0.28 };
+}
+
+/* Os três grupos, dispostos EM VOLTA do card do problema, que fica no centro do
+   palco: dois LADEANDO o card, à meia-altura dele, e um embaixo. Ladear é o que
+   faz a composição ler como "em volta do problema" — com os dois grupos de cima
+   nos cantos superiores, como estavam, o card sobrava embaixo e a cena virava
+   quatro coisas soltas em vez de um arranjo. O leve desnível entre os dois
+   (0.40 / 0.44) tira a simetria de espelho, que lê como diagrama. */
+const PBL_CLUSTERS = [{ cx: 0.15, cy: 0.43 }, { cx: 0.85, cy: 0.47 }, { cx: 0.5, cy: 0.75 }];
+
+/* Lugar de cada membro dentro do seu grupo, em px a partir do centro dele.
+   Propositalmente IRREGULAR (não um 2x2 exato): gente sentada em volta de um
+   problema não se alinha em matriz, e a grade regular é justamente o estado
+   ANTERIOR — repeti-la aqui apagaria a diferença que a cena existe para contar.
+
+   Estes números acompanham o TAMANHO do avatar (--pbl-av): a distância entre
+   vizinhos tem de ser maior que um diâmetro, senão eles se sobrepõem. Ao mexer
+   no tamanho lá no CSS, mexer aqui junto. */
+const PBL_OFFSETS: [number, number][][] = [
+  [[-16, -57], [18, -19], [-18, 19], [16, 57]],
+  [[-18, -57], [16, -19], [18, 19], [-16, 57]],
+  [[-16, -38], [18, 0], [-14, 38]],
 ];
 
-/** Card de PBL: rede de participantes em torno de um problema central. Ao rolar,
-    os nós surgem, os raios se ligam ao problema, o anel de diálogo se acende e
-    as etiquetas de habilidade aparecem — a leitura que a IA devolve. `scrub`
-    liga tudo ao scroll. A geometria de cada aresta (comprimento/ângulo) sai de
-    CÁLCULO a partir das posições, não de CSS à mão. Repouso (reduced-motion) =
-    rede inteira conectada, com as habilidades visíveis. */
-function ProblemNet() {
+/* Quem vai para qual grupo, por índice de grade. EMBARALHADO de propósito: se
+   cada grupo puxasse quatro vizinhos de grade, os avatares andariam poucos
+   pixels e a cena leria como "assentou", não como "reagrupou". */
+const PBL_MEMBERS = [[0, 5, 8, 11], [1, 4, 9, 2], [3, 7, 10]];
+
+/* O facilitador é UM DOS DOZE — na grade ele é indistinguível dos outros, e é
+   só quando os grupos se formam que ele ganha anel, crachá e o posto de ponte
+   entre eles, encostado no problema. Por isso um dos grupos tem três e não
+   quatro: ele saiu das fileiras, não apareceu do nada. */
+const PBL_FAC_I = 6;
+/* No bolso de cima: os dois grupos que ladeiam o card ficam abaixo e aos lados
+   dele, e o card logo embaixo — o facilitador cai no vão que sobra entre os
+   três, encostado no problema. É a posição de PONTE, e não a de "mais um
+   avatar num canto". */
+const PBL_FAC_AT = { x: 0.5, y: 0.25 };
+
+/** Destino de cada avatar, indexado pela posição na GRADE — que também é a
+    ordem do DOM, para o leitor de tela e para o stagger baterem com o desenho. */
+const PBL_SEATS: { grid: { x: number; y: number }; to: { x: number; y: number }; off: [number, number]; fac: boolean }[] = (() => {
+  const out = new Array(PBL_COLS * 3);
+  PBL_MEMBERS.forEach((ids, g) =>
+    ids.forEach((id, k) => {
+      out[id] = { grid: pblGridAt(id), to: { x: PBL_CLUSTERS[g].cx, y: PBL_CLUSTERS[g].cy }, off: PBL_OFFSETS[g][k], fac: false };
+    }),
+  );
+  out[PBL_FAC_I] = { grid: pblGridAt(PBL_FAC_I), to: PBL_FAC_AT, off: [0, 0] as [number, number], fac: true };
+  return out;
+})();
+
+/* Os figurantes da cena, e o caso que eles discutem.
+
+   Sobre inventar: a regra desta landing é não inventar PROVA — depoimento,
+   número, logo de cliente, qualquer coisa que afirme um fato sobre o negócio
+   (ver a seção de prova, comentada de propósito mais abaixo). Nomes de
+   figurante e um caso-exemplo num diagrama são outra categoria: são
+   ILUSTRAÇÃO de como uma sessão se parece, não a alegação de que esta sessão
+   aconteceu. Por isso os nomes são primeiro nome + inicial — leem como
+   marcador de pessoa, não como identidade de alguém —, e o caso é genérico o
+   bastante para ninguém reconhecer nele um cliente. Ao mexer aqui, manter a
+   linha: concreto para dar realismo, nunca específico a ponto de virar prova. */
+const PBL_NAMES = [
+  "Ana L.", "Marcus T.", "Priya S.", "Diego F.",
+  "Nour A.", "Ravi K.", "Clara M.", "Tomás B.",
+  "Yuki M.", "Sara O.", "Ben C.", "Lena W.",
+];
+const PBL_PROBLEM = "A city clinic misses one in three follow-up visits. Find out why, and propose a fix its staff will actually use.";
+
+/* A leitura que a IA devolve. Habilidade + o que a pessoa fez para mostrá-la —
+   é o "read-back" do texto ao lado, não uma lista de features. Genéricas e
+   ilustrativas de propósito: não há sessão real por trás destas linhas, e
+   inventar dado de gente é a pior coisa a inventar aqui. */
+const PBL_READ: [string, string][] = [
+  ["questions", "reframed the problem before the group ran at it"],
+  ["listens", "brought back the point that got talked over"],
+  ["mediates", "held the disagreement open instead of settling it"],
+  ["synthesizes", "pulled three threads into one answer"],
+  ["leads", "moved the group when it stalled"],
+];
+
+/* Comprimento de scroll que a cena consome. É o KNOB PRINCIPAL de velocidade:
+   maior = cena mais lenta, e é só este número. Vive aqui e desce para o CSS
+   como custom property, então o mesmo valor governa a altura do painel (que é
+   o que cria o scroll) e o range do ScrollTrigger — não há como os dois
+   saírem de sincronia. */
+const PBL_SCROLL = "480vh";
+
+/** Encadeia UM TWEEN POR ALVO, em vez de usar o `stagger` do GSAP.
+
+    Não é preciosismo: num tween com stagger, o `immediateRender` do from/fromTo
+    aplica o estado inicial SÓ ao alvo de deslocamento zero — os demais ficam no
+    estado final até que a sub-animação deles comece. Numa timeline com scrub
+    isso não é um detalhe, é a cena abrindo pelo fim: dos 12 avatares, só o
+    índice 11 (o de offset 0, com `from: "end"`) recebia transform no progress 0;
+    os outros onze já nasciam agrupados e a GRADE INICIAL — que é o payload da
+    cena — nunca chegava a aparecer. O mesmo valia para as linhas da leitura,
+    onde 4 das 5 aparecem antes da hora.
+
+    Com um tween por alvo, cada um tem offset 0 e aplica o próprio estado
+    inicial. `from` é função do índice para o valor poder ser recalculado no
+    refresh (é o que mantém a migração correta ao redimensionar). */
+function pblStagger(
+  tl: gsap.core.Timeline,
+  targets: HTMLElement[],
+  from: (i: number) => gsap.TweenVars,
+  to: gsap.TweenVars,
+  at: number,
+  step: number,
+) {
+  targets.forEach((t, i) => tl.fromTo(t, from(i), { ...to, immediateRender: true }, at + i * step));
+}
+
+/** Painel "Built around PBL": a cena presa na tela, tocada pelo scroll.
+
+    O scroll-lock é o `position: sticky` do CSS, NÃO o `pin` do ScrollTrigger.
+    Este painel é filho da sanfona (.lp-capstack), onde cada painel gruda no
+    topo e o seguinte sobe cobrindo — e o pin quebraria justamente isso: ele
+    envolve o alvo num pin-spacer (que entra como irmão e desalinha a geometria
+    de cobertura) e troca o painel para `position: fixed` (que o tira do fluxo
+    sticky, matando o ser-coberto). Então o painel só fica ALTO (--pbl-scroll) e
+    um filho sticky de 100vh segura a cena; ao GSAP sobra o `scrub`, que é o que
+    de fato se queria dele. Sem pin-spacer, sem conflito, e é o mesmo mecanismo
+    que a sanfona inteira já usa.
+
+    O repouso (CSS) é o estado FINAL — grupos formados, leitura visível,
+    facilitador no lugar, remate à mostra —, como no BootDevice. Os `.from()`
+    puxam para trás, para a grade e para o apagado, e animam de volta até esse
+    repouso. É o que faz reduced-motion e mobile funcionarem SEM ramo especial:
+    lá o timeline nem monta e a cena já nasce pronta. */
+function PblPanel({ c }: { c: (typeof CAPS)[number] }) {
   const ref = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const el = ref.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const ctx = gsap.context(() => {
-      gsap
-        .timeline({ scrollTrigger: { trigger: el, start: "top 82%", end: "top 32%", scrub: 1 } })
-        .from(".lp-net-node", { scale: 0, stagger: 0.05, duration: 0.4 }, 0)
-        .from(".lp-net-spoke", { scaleX: 0, stagger: 0.04, duration: 0.4 }, 0.1)
-        .from(".lp-net-link", { scaleX: 0, autoAlpha: 0, stagger: 0.05, duration: 0.4 }, 0.36)
-        .from(".lp-net-skill", { autoAlpha: 0, y: 4, stagger: 0.06, duration: 0.4 }, 0.62);
-    }, el);
-    return () => ctx.revert();
+    if (!el) return;
+
+    /* gsap.matchMedia cuida do ciclo: monta ao entrar na query, e reverte
+       sozinho ao sair dela (redimensionar cruzando o breakpoint, ou o usuário
+       ligando reduced-motion no sistema). Fora da query nada monta — e o
+       repouso do CSS já é o estado final. */
+    const mm = gsap.matchMedia();
+    mm.add("(min-width: 1001px) and (prefers-reduced-motion: no-preference)", () => {
+      const room = el.querySelector<HTMLElement>(".lp-pbl-room")!;
+      // Medido na hora do tween, não fechado aqui: com invalidateOnRefresh o
+      // GSAP reavalia estas funções a cada refresh, e o palco já mudou de
+      // tamanho quando isso acontece.
+      const w = () => room.clientWidth;
+      const h = () => room.clientHeight;
+
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: el,
+          start: "top top",        // o painel encosta no topo: a cena trava
+          end: "bottom bottom",    // ...e solta quando a altura extra acaba
+          scrub: 0.8,              // inércia atrás do scroll: quanto mais, mais deslizado
+          invalidateOnRefresh: true,
+        },
+        defaults: { ease: "none" },
+      });
+
+      /* A cena ABRE como cartão de título: só o título, em corpo de display,
+         sobre o palco vazio. Centrar é do CSS (o intro é absoluto sobre o
+         stick inteiro), não de medida em JS — foi o que permitiu apagar o
+         introX/introY que existiam aqui: eles centravam a COLUNA de texto, que
+         não abre mais a cena. */
+      const stick = el.querySelector<HTMLElement>(".lp-pbl-stick")!;
+      const stage = el.querySelector<HTMLElement>(".lp-pbl-stage")!;
+      const txt = el.querySelector<HTMLElement>(".lp-cap-txt")!;
+      const intro = el.querySelector<HTMLElement>(".lp-pbl-intro")!;
+
+      /* A cena NASCE centralizada e depois passa para a esquerda. É translação
+         pura, não escala: para ocupar o centro bastaria mover o palco até o
+         meio do stick, enquanto ampliá-lo exigiria ~2x de scale — e a essa
+         altura os avatares (que são DOM, com borda de 1px e ícone) engordam
+         junto, o que denuncia o truque. Traduzido, o palco continua do tamanho
+         que terá no fim, e o deslize é o único movimento. */
+      const stageDx = () => stick.clientWidth / 2 - (stage.offsetLeft + stage.offsetWidth / 2);
+      /* offsetLeft/offsetWidth, e NÃO getBoundingClientRect: estes ignoram
+         transform, então a conta dá o mesmo resultado seja qual for o ponto da
+         timeline em que o refresh a mandar recalcular. Com rect seria preciso
+         descontar o x já aplicado, e errar esse desconto (silenciosamente, num
+         invalidate no meio da cena) jogaria o bloco para qualquer lugar. */
+      /* O timeline é a fonte da verdade do timing: cada tween entra numa
+         posição relativa e o scrub mapeia o scroll para o progress. Não há
+         threshold manual em lugar nenhum.
+
+         Quatro batidas: (1) o título grande sozinho, que se dissolve dando
+         lugar à roda; (2) a cena, centralizada; (3) a cena passa para a
+         esquerda; (4) o texto entra na direita e as habilidades surgem sob
+         ele. */
+      tl.addLabel("intro", 0)
+        /* O título de abertura se dissolve, e é POR DENTRO do fade dele que a
+           roda começa a aparecer: o fade vai de 0.35 a 1.05 e os avatares
+           entram em 0.55, ainda com o título em tela. Sem essa sobreposição
+           haveria um vão de tela vazia entre o texto sumir e a sala surgir.
+
+           A escala sobe de leve junto (1 → 1.06): dissolver crescendo lê como
+           afastar-se, não como apagar. Longo e em `sine.inOut` pelo mesmo
+           motivo de sempre — curva mansa, transição e não corte. */
+        .fromTo(intro,
+          { autoAlpha: 1, scale: 1 },
+          { autoAlpha: 0, scale: 1.06, duration: 0.7, ease: "sine.inOut", immediateRender: true }, 0.35)
+        /* O texto da coluna fica escondido a cena inteira e só entra na batida
+           4. O `from` com immediateRender é o que o esconde já no progress 0 —
+           o repouso do CSS é visível, para o caso sem JS. */
+        .fromTo(txt,
+          { autoAlpha: 0 },
+          { autoAlpha: 1, duration: 0.7, ease: "sine.inOut", immediateRender: true }, 3.9)
+        // (3) A cena passa para a esquerda, abrindo a direita para o texto.
+        .fromTo(stage,
+          { x: stageDx },
+          { x: 0, duration: 0.95, ease: "sine.inOut", immediateRender: true }, 3.3)
+        /* O problema materializa NO MEIO DA MIGRAÇÃO, não antes dela. Antes
+           colidia: a grade é uniforme e cobre o palco inteiro, então as duas
+           células centrais caem exatamente sobre o card, e ele nascia por baixo
+           de dois avatares. Entrando aqui, ele aparece no vão que a debandada
+           abre no centro — e os grupos ainda estão a caminho, então continuam
+           se organizando à volta dele, que é o que a cena tem de dizer. */
+        .from(".lp-pbl-problem", { autoAlpha: 0, scale: 0.86, duration: 0.5, ease: "power2.out" }, 2.35)
+        /* Facilitador: só DEPOIS dos grupos formados ele se distingue. Até aqui
+           ele viajou junto com os outros, igual a todos — o que muda agora é o
+           papel, não a chegada. */
+        .addLabel("fac", 2.9)
+        .from(".lp-pbl-fac-ring", { autoAlpha: 0, scale: 0.3, duration: 0.5, ease: "power2.out" }, "fac")
+        .from(".lp-pbl-fac-badge", { autoAlpha: 0, y: 8, duration: 0.4 }, "fac+=0.15")
+        .from(".lp-pbl-p-fac", { borderColor: "var(--line-2)", color: "var(--muted)", duration: 0.5 }, "fac")
+        // A leitura das habilidades, sob o texto que acabou de voltar.
+        .addLabel("read", 4.25)
+        .from(".lp-pbl-read-h", { autoAlpha: 0, y: 10, duration: 0.35 }, "read");
+
+      const dots = gsap.utils.toArray<HTMLElement>(".lp-pbl-p", el);
+
+      /* Os avatares NASCEM INVISÍVEIS e vão aparecendo com o scroll, um a um,
+         montando a grade de webinar — a sala enchendo antes de se reorganizar.
+         Só depois disso é que a migração começa.
+
+         A ordem é de FORA PARA DENTRO (linha de cima, linha de baixo, linha do
+         meio por último), e não a de leitura. Motivo: a linha central da grade
+         cai bem atrás do título de abertura, que ainda está dissolvendo aqui —
+         na ordem natural, um chip surgia colado na palavra "Built" e a
+         sobreposição lia como defeito. Deixando o miolo para o fim, a sala
+         enche em volta do título e o centro só é ocupado quando ele já saiu. */
+      const ordemEntrada = [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7].map((i) => dots[i]);
+      pblStagger(tl, ordemEntrada, () => ({ autoAlpha: 0, scale: 0.7 }),
+        { autoAlpha: 1, scale: 1, duration: 0.4, ease: "power2.out" }, 0.55, 0.045);
+
+      /* Grade → grupos: o payload da cena. x/y (transform), nunca left/top —
+         left/top forçam layout a cada quadro e a migração engasgaria. */
+      pblStagger(
+        tl,
+        dots,
+        (i) => ({
+          x: () => (PBL_SEATS[i].grid.x - PBL_SEATS[i].to.x) * w() - PBL_SEATS[i].off[0],
+          y: () => (PBL_SEATS[i].grid.y - PBL_SEATS[i].to.y) * h() - PBL_SEATS[i].off[1],
+        }),
+        { x: 0, y: 0, duration: 0.95, ease: "power2.inOut" },
+        1.5,
+        0.03,
+      );
+
+      pblStagger(
+        tl,
+        gsap.utils.toArray<HTMLElement>(".lp-pbl-line", el),
+        () => ({ autoAlpha: 0, y: 12 }),
+        { autoAlpha: 1, y: 0, duration: 0.4 },
+        4.4,
+        0.11,
+      );
+
+      tl.from(".lp-pbl-tag", { autoAlpha: 0, y: 10, duration: 0.45 }, 5.25);
+
+      /* Toda a cena é medida (centro do cartão de abertura, destino de cada
+         avatar), e medida cedo é medida errada. Um ResizeObserver reage ao que
+         de fato importa — "a caixa mudou de tamanho" — sem precisar advinhar
+         POR QUE mudou.
+
+         `document.fonts.ready` não resolve isto sozinho: a Figtree entra por
+         @import DENTRO do landing.css, então no instante em que a promessa é
+         criada a folha nem foi buscada e não há fonte pendente para esperar —
+         ela resolve "pronto" ainda com a métrica de fallback, e nem um duplo
+         rAF depois disso ajuda. Medido: 37px fora do centro por esse caminho,
+         0px quando o refresh vem depois (um resize já corrigia).
+
+         Observa os dois que governam a geometria: a coluna de texto (largura em
+         `ch`, que muda com a fonte) e o palco (que muda com a viewport). */
+      let ultimo = "";
+      let raf = 0;
+      const ro = new ResizeObserver((entradas) => {
+        const agora = entradas.map((e) => Math.round(e.contentRect.width) + "x" + Math.round(e.contentRect.height)).join("|");
+        if (agora === ultimo) return;   // sem mudança real: nada de refresh em laço
+        ultimo = agora;
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => ScrollTrigger.refresh());
+      });
+      ro.observe(txt);
+      ro.observe(room);
+
+      return () => { ro.disconnect(); cancelAnimationFrame(raf); };
+    });
+
+    // O remedir depois do layout assentar é do ResizeObserver, montado junto
+    // com o timeline (e revertido junto) — ver dentro do matchMedia acima.
+    return () => mm.revert();
   }, []);
+
   return (
-    <div className="lp-net" ref={ref} aria-hidden="true">
-      {NET_EDGES.map(([a, b], i) => {
-        const A = NET_NODES[a], B = NET_NODES[b];
-        const dx = B.x - A.x, dy = B.y - A.y;
-        const len = Math.hypot(dx, dy);
-        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-        return (
-          <span
-            key={i}
-            className={`lp-net-edge ${a === 0 ? "lp-net-spoke" : "lp-net-link"}`}
-            style={{ left: A.x, top: A.y, width: len, transform: `rotate(${ang}deg)` }}
-          />
-        );
-      })}
-      {NET_NODES.map((n, i) => (
-        <span key={i} className={`lp-net-node ${n.hub ? "lp-net-node--hub" : ""}`} style={{ left: n.x, top: n.y }}>
-          {n.skill && <span className="lp-net-skill">{n.skill}</span>}
-        </span>
-      ))}
+    <div className="lp-capstack-panel lp-pbl-panel" ref={ref} style={{ ["--pbl-scroll" as string]: PBL_SCROLL }}>
+      <div className="lp-pbl-stick">
+        {/* Cartão de abertura: só o título, em corpo de display, sobreposto ao
+            palco vazio. É elemento PRÓPRIO, e não o h3 da coluna crescido: o
+            h3 tem de acabar pequeno na direita, e levar um mesmo nó de 5rem
+            até 1.75rem pediria um tween de escala que borra a fonte no meio do
+            caminho. Dois elementos, cada um no seu corpo, um esmaece e o outro
+            entra — sem escala nenhuma no texto.
+
+            aria-hidden porque é repetição visual: quem carrega o título para o
+            leitor de tela é o h3 de verdade, logo abaixo. */}
+        <div className="lp-pbl-intro" aria-hidden="true">
+          {/* O título vai num filho ÚNICO, não solto no container. O container
+              centra por grid, e grid trata cada nó de texto e cada span como
+              item próprio: solto, "Built around" e "PBL" viravam dois itens em
+              linhas separadas, centrados cada um na sua — o título abria
+              rachado no meio da tela. Com um filho só, o span volta a ser
+              inline dentro do parágrafo. */}
+          <p className="lp-pbl-intro-t">
+            {c.t.slice(0, c.t.lastIndexOf(" "))}{" "}
+            {/* Destaque na última palavra do título — "PBL". Sai de c.t em vez
+                de ser escrito à mão para não descolar se o título mudar. */}
+            <span className="lp-pbl-intro-hl">{c.t.slice(c.t.lastIndexOf(" ") + 1)}</span>
+          </p>
+        </div>
+
+        {/* A cena é diagrama: o sentido dela está no texto ao lado. Anunciar
+            avatar por avatar no leitor de tela só produziria ruído. */}
+        <div className="lp-pbl-stage" aria-hidden="true">
+          <div className="lp-pbl-room">
+            {/* O problema, no centro — é em volta dele que os grupos se formam. */}
+            <div className="lp-pbl-problem">
+              <p className="lp-pbl-problem-k">The problem</p>
+              <p className="lp-pbl-problem-t">{PBL_PROBLEM}</p>
+            </div>
+
+            {/* Repouso = já agrupado. Quem devolve à grade é o .from().
+                O miolo é SLOT: trocar o <i> por um <img> veste o avatar com a
+                foto da pessoa sem tocar em posição, tamanho ou animação. */}
+            {PBL_SEATS.map((s, i) => (
+              /* A posição vai em CUSTOM PROPERTIES, não em left/top prontos: o
+                 CSS monta o calc, e assim o mobile — onde três grupos ladeando
+                 o card não cabem numa coluna de celular — pode reposicionar os
+                 grupos por breakpoint sem duplicar estes números aqui. O JS
+                 segue sendo a fonte do desktop, que é onde a cena roda. */
+              <span
+                key={i}
+                className={`lp-pbl-p${s.fac ? " lp-pbl-p-fac" : ""}`}
+                data-c={s.fac ? "f" : PBL_MEMBERS.findIndex((g) => g.includes(i))}
+                style={{
+                  ["--gx" as string]: `${s.to.x}`,
+                  ["--gy" as string]: `${s.to.y}`,
+                  ["--ox" as string]: `${s.off[0]}`,
+                  ["--oy" as string]: `${s.off[1]}`,
+                }}
+              >
+                {/* A pessoa é o NOME. O slot de foto continua existindo, mas
+                    agora é opt-in: sem <img> não há círculo nenhum, e com um
+                    <img> a regra de :has liga a miniatura ao lado do nome. */}
+                <span className="lp-pbl-nome">{PBL_NAMES[i]}</span>
+                {s.fac && <span className="lp-pbl-fac-ring" />}
+                {s.fac && <span className="lp-pbl-fac-badge">facilitator</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="lp-cap-txt" data-reveal>
+          <h3>{c.t}</h3>
+          <p className="lp-muted">{c.d}</p>
+
+          <div className="lp-pbl-read">
+            <p className="lp-pbl-read-h">Skills read-back</p>
+            {PBL_READ.map(([skill, note]) => (
+              <p className="lp-pbl-line" key={skill}>
+                <span className="lp-pbl-skill">{skill}</span> {note}
+              </p>
+            ))}
+          </div>
+
+          <p className="lp-pbl-tag">{c.tag}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Cena de marca ("Your brand, end to end") ────────────────────────────────
+   A tese da seção é que a ESTRUTURA da sala é constante e só a identidade
+   muda. A cena prova isso do jeito mais direto possível: existe UMA sala no
+   DOM, e a troca de marca não toca em layout nenhum — muda `--accent`, o
+   glifo do logo e o nome. Se algum tile se mexesse durante o ciclo, a seção
+   estaria mentindo, então não há nada de posicional na timeline.
+
+   É a MESMA sala do capítulo anterior: os quatro participantes são os quatro
+   primeiros nomes de PBL_NAMES. Lá ela se forma pelo método, aqui ela se veste
+   de marca — e reusar os nomes é o que torna isso literal em vez de retórico. */
+const SKIN_BRANDS: { name: string; color: string; glyph: string }[] = [
+  { name: "Northwind Learning", color: "#4f8cff", glyph: "fa-graduation-cap" },
+  { name: "Vitalis Health", color: "#2fbf8f", glyph: "fa-heart-pulse" },
+  { name: "Arc Studio", color: "#f0883e", glyph: "fa-compass-drafting" },
+];
+
+/* Comprimento de scroll da cena — knob principal de velocidade, como no PBL.
+   Desce ao CSS como custom property, então governa de uma vez a altura do
+   painel (que cria o scroll) e o range do trigger. */
+const SKIN_SCROLL = "300vh";
+
+/* Os quatro da sala: os mesmos nomes do capítulo de PBL — é o que faz "a mesma
+   sala" ser literal e não retórica —, agora com rosto. Retratos gerados por IA
+   (procedência em public/people/FONTES.md): ninguém real está retratado, que é
+   o que torna aceitável pôr rosto numa página comercial. */
+const SKIN_SEATS = [
+  { name: PBL_NAMES[0], photo: "/people/ana.webp" },
+  { name: PBL_NAMES[1], photo: "/people/marcus.webp" },
+  { name: PBL_NAMES[2], photo: "/people/priya.webp" },
+  { name: PBL_NAMES[3], photo: "/people/diego.webp" },
+];
+/* Tempo de PARADA em cada marca e de TRAVESSIA entre duas, em unidades da
+   timeline. A parada é o que deixa ler o nome e o hex; a travessia é onde a
+   cor interpola. */
+const SKIN_HOLD = 0.85;
+const SKIN_CROSS = 1;
+/* Meia-janela do mergulho de opacidade do nome/logo, em fração da travessia.
+   Fora dela o texto está cheio; no meio exato ele zera — é aí que a troca
+   acontece, invisível. Pequeno de propósito: um mergulho longo borraria a
+   leitura, que é justamente o que não se quer em nome e logo. */
+const SKIN_DIP = 0.16;
+
+/** Interpola dois hex e devolve HEX. Não uso gsap.utils.interpolate aqui de
+    propósito: ele devolve `rgb(...)`, e o painel de config precisa mostrar o
+    hex ao vivo. Com uma função só, a cor aplicada na sala e o número escrito
+    no campo são literalmente o mesmo valor — se divergissem, o "configured
+    through the same API" viraria enfeite. */
+function skinLerp(a: string, b: string, t: number) {
+  const A = parseInt(a.slice(1), 16);
+  const B = parseInt(b.slice(1), 16);
+  const mix = (s: number) => {
+    const ca = (A >> s) & 255;
+    return Math.round(ca + (((B >> s) & 255) - ca) * t);
+  };
+  return "#" + ((1 << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)).toString(16).slice(1);
+}
+
+/** Painel "Your brand, end to end": a sala se veste de cada marca conforme o
+    scroll, dirigida pelo painel de config à esquerda.
+
+    Como no painel de PBL, o scroll-lock é o `position: sticky` do CSS e não o
+    `pin` do ScrollTrigger — este painel também é filho da sanfona, onde o
+    pin-spacer desalinharia a cobertura entre irmãos e o `position: fixed`
+    tiraria o painel do fluxo sticky. Ao GSAP cabe o `scrub`.
+
+    O repouso (CSS + DOM) é a PRIMEIRA marca já aplicada: sem JS — reduced
+    motion, mobile, ou o chunk falhando — a sala aparece vestida e legível, em
+    vez de crua. */
+function SkinPanel({ c }: { c: (typeof CAPS)[number] }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const mm = gsap.matchMedia();
+    mm.add("(min-width: 1001px) and (prefers-reduced-motion: no-preference)", () => {
+      const cena = el.querySelector<HTMLElement>(".lp-skin-scene")!;
+      const hex = el.querySelector<HTMLElement>("[data-skin-hex]")!;
+      /* LISTAS, não querySelector: o glifo e o nome aparecem DUAS vezes cada —
+         no painel de config e no header da sala —, e é justamente essa
+         duplicação que encena "a config dirige a sala". Com querySelector só o
+         primeiro trocava, e a sala ficava com o logo da marca anterior
+         enquanto o config já mostrava a nova. */
+      const glifos = gsap.utils.toArray<HTMLElement>("[data-skin-glyph]", el);
+      const nomes = gsap.utils.toArray<HTMLElement>("[data-skin-name]", el);
+      const n = SKIN_BRANDS.length;
+
+      /* Função pura do progresso: recebe a posição no ciclo (0..n-1) e escreve
+         o estado. Todo o re-skin passa por aqui, e ela não toca em nada de
+         layout — só cor, texto e glifo. */
+      const pintar = (p: number) => {
+        const i = Math.min(n - 2, Math.max(0, Math.floor(p)));
+        const t = Math.min(1, Math.max(0, p - i));
+        const a = SKIN_BRANDS[i];
+        const b = SKIN_BRANDS[i + 1];
+
+        // A COR é contínua: interpola a cada quadro, sem degrau.
+        const cor = skinLerp(a.color, b.color, t);
+        cena.style.setProperty("--accent", cor);
+        hex.textContent = cor.toUpperCase();
+
+        /* NOME e LOGO não interpolam — texto meio-termo não existe e glifo em
+           morph vira borrão. Eles mergulham até zero no meio da travessia,
+           trocam de valor ali (invisíveis) e voltam. */
+        const dip = Math.min(1, Math.abs(t - 0.5) / SKIN_DIP);
+        const atual = t < 0.5 ? a : b;
+        glifos.forEach((e) => {
+          e.className = `fa-solid ${atual.glyph}`;
+          e.style.opacity = String(dip);
+        });
+        nomes.forEach((e) => {
+          e.textContent = atual.name;
+          e.style.opacity = String(dip);
+        });
+      };
+
+      const proxy = { p: 0 };
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: el,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 0.8,
+          invalidateOnRefresh: true,
+        },
+        defaults: { ease: "none" },
+        onUpdate: () => pintar(proxy.p),
+      });
+
+      /* O ciclo: segura a marca, atravessa para a próxima, segura de novo. As
+         paradas são tweens sem alvo de valor (p já está lá) — existem só para
+         ocupar tempo de timeline, que com scrub é ocupar scroll. */
+      tl.to(proxy, { p: 0, duration: SKIN_HOLD });
+      for (let i = 1; i < n; i++) {
+        tl.to(proxy, { p: i, duration: SKIN_CROSS, ease: "power1.inOut" })
+          .to(proxy, { p: i, duration: SKIN_HOLD });
+      }
+
+      pintar(0);
+
+      /* Medida tardia, mesma razão do painel de PBL: `fonts.ready` não serve
+         porque a Figtree entra por @import e resolve antes da folha ser
+         buscada. O observador reage ao que importa — a caixa mudou. */
+      let ultimo = "";
+      let raf = 0;
+      const ro = new ResizeObserver((es) => {
+        const agora = es.map((e) => Math.round(e.contentRect.width)).join("|");
+        if (agora === ultimo) return;
+        ultimo = agora;
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => ScrollTrigger.refresh());
+      });
+      ro.observe(cena);
+
+      return () => {
+        ro.disconnect();
+        cancelAnimationFrame(raf);
+        /* O revert do GSAP desfaz tweens, não as escritas manuais de
+           textContent/className/style que o pintar() faz. Sem devolver a
+           primeira marca aqui, sair da query (redimensionar para mobile,
+           ligar reduced-motion) deixaria a sala congelada no meio de uma
+           travessia, com nome de uma marca e cor de outra. */
+        cena.style.removeProperty("--accent");
+        glifos.forEach((e) => {
+          e.className = `fa-solid ${SKIN_BRANDS[0].glyph}`;
+          e.style.opacity = "";
+        });
+        hex.textContent = SKIN_BRANDS[0].color.toUpperCase();
+        nomes.forEach((e) => {
+          e.textContent = SKIN_BRANDS[0].name;
+          e.style.opacity = "";
+        });
+      };
+    });
+
+    return () => mm.revert();
+  }, []);
+
+  const marca = SKIN_BRANDS[0];
+
+  return (
+    <div className="lp-capstack-panel lp-skin-panel" ref={ref} style={{ ["--skin-scroll" as string]: SKIN_SCROLL }}>
+      <div className="lp-skin-stick">
+        <div className="lp-cap-txt" data-reveal>
+          <h3>{c.t}</h3>
+          <p className="lp-muted">{c.d}</p>
+        </div>
+
+        {/* A cena é demonstração visual: o que ela diz está no resumo abaixo,
+            em texto. Ler campo a campo de um mock de config no leitor de tela
+            seria ruído, não informação. */}
+        <div className="lp-skin-scene" aria-hidden="true">
+          {/* Esquerda: a config que dirige o re-skin. */}
+          <div className="lp-skin-cfg">
+            <p className="lp-skin-cfg-h">
+              <span className="lp-t-verb">PATCH</span> /v1/tenants/:id/branding
+            </p>
+            <div className="lp-skin-row">
+              <span className="lp-skin-k">logo</span>
+              <span className="lp-skin-v">
+                {/* SLOT: trocar o <i> por <img>/<svg> veste o logo real da
+                    marca sem tocar em posição, tamanho ou timeline. */}
+                <span className="lp-skin-logo">
+                  <i className={`fa-solid ${marca.glyph}`} data-skin-glyph />
+                </span>
+              </span>
+            </div>
+            <div className="lp-skin-row">
+              <span className="lp-skin-k">brand_color</span>
+              <span className="lp-skin-v">
+                <span className="lp-skin-sw" />
+                <span className="lp-skin-hex" data-skin-hex>{marca.color.toUpperCase()}</span>
+              </span>
+            </div>
+            <div className="lp-skin-row">
+              <span className="lp-skin-k">product_name</span>
+              <span className="lp-skin-v lp-skin-str">"<span data-skin-name>{marca.name}</span>"</span>
+            </div>
+          </div>
+
+          {/* Direita: a sala. Nada aqui muda de posição durante o ciclo. */}
+          <div className="lp-skin-room">
+            <div className="lp-skin-top">
+              <span className="lp-skin-logo lp-skin-logo--room">
+                <i className={`fa-solid ${marca.glyph}`} data-skin-glyph />
+              </span>
+              <span className="lp-skin-brandname" data-skin-name>{marca.name}</span>
+              <span className="lp-skin-live"><span className="lp-skin-dot" />live</span>
+            </div>
+
+            <div className="lp-skin-grid">
+              {SKIN_SEATS.map((s, i) => (
+                <div className="lp-skin-tile" key={s.name} data-speaking={i === 0 || undefined}>
+                  {/* alt vazio: a cena inteira é aria-hidden e o que ela
+                      demonstra está no resumo em texto. Descrever quatro
+                      rostos de figurante só encheria o leitor de tela. */}
+                  <img src={s.photo} alt="" loading="lazy" decoding="async" />
+                  <span className="lp-skin-tile-n">{s.name}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="lp-skin-bar">
+              <span className="lp-skin-btn lp-skin-btn--on"><i className="fa-solid fa-microphone" /></span>
+              <span className="lp-skin-btn"><i className="fa-solid fa-video" /></span>
+              <span className="lp-skin-btn"><i className="fa-solid fa-arrow-up-from-bracket" /></span>
+              <span className="lp-skin-btn lp-skin-btn--cta"><i className="fa-solid fa-hand" />Raise hand</span>
+              {/* Vermelho de PERIGO, não da marca: sai de --accent-deep, que o
+                  escopo da cena não sobrescreve. Se seguisse --accent, "sair"
+                  mudaria de significado a cada marca. */}
+              <span className="lp-skin-btn lp-skin-btn--leave"><i className="fa-solid fa-phone-slash" /></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Legenda e remate andam juntos: são um bloco de fecho, não dois
+            parágrafos soltos. Separados pelo gap do stick, eles se espalhavam
+            e o conjunto tomava a altura toda. */}
+        <div className="lp-skin-foot">
+          <p className="lp-skin-note">
+            Same layout, same controls, same participants — only the logo, the color, and the name change.
+          </p>
+          <p className="lp-pbl-tag">{c.tag}</p>
+        </div>
+
+        {/* O que a cena demonstra, para quem não a vê. */}
+        <p className="lp-sr-only">
+          The same room layout is shown re-skinned for {SKIN_BRANDS.map((b) => b.name).join(", ")} —
+          example configurations. Only the logo, brand color, and product name change between them;
+          the header, the participant grid, and the controls stay identical.
+        </p>
+      </div>
     </div>
   );
 }
@@ -411,12 +1087,13 @@ function CapContent({ c, flip }: { c: (typeof CAPS)[number]; flip: boolean }) {
       </div>
       <div className="lp-card" data-reveal style={{ ["--i" as string]: 1 }} data-fill={flip ? "flat" : "glow"}>
         {c.anim === "boot" ? <BootDevice />
-          : c.anim === "network" ? <ProblemNet />
           : <i className={`fa-solid ${c.icon} lp-card-icon`} aria-hidden="true" />}
       </div>
     </div>
   );
 }
+
+
 
 /** Pilha sanfona: cada capítulo é um painel `position: sticky` que gruda no
     topo, e o seguinte — opaco e full-bleed — sobe por cima cobrindo o anterior.
@@ -440,8 +1117,10 @@ function CapStack({ items, children }: { items: (typeof CAPS)[number][]; childre
       panels.forEach((panel, i) => {
         if (i === panels.length - 1) return; // o último não é coberto
         // O painel de baixo recua enquanto o de cima cobre. `.lp-cap` nos caps,
-        // `.lp-panel-in` no painel extra (steps) — o alvo comum é o conteúdo.
-        gsap.to(panel.querySelector(".lp-cap, .lp-panel-in"), {
+        // `.lp-panel-in` no painel extra (steps), `.lp-pbl-stick`/`.lp-skin-stick`
+        // nos de cena — o alvo comum é o conteúdo, e nas cenas ele é o filho
+        // sticky que segura o quadro.
+        gsap.to(panel.querySelector(".lp-cap, .lp-panel-in, .lp-pbl-stick, .lp-skin-stick"), {
           scale: 0.93,
           opacity: 0.35,
           ease: "none",
@@ -458,10 +1137,17 @@ function CapStack({ items, children }: { items: (typeof CAPS)[number][]; childre
   }, []);
   return (
     <div className="lp-capstack" ref={ref}>
+      {/* O painel de PBL traz o próprio corpo (cena presa na tela) em vez do
+          CapContent, mas segue sendo um .lp-capstack-panel irmão — é o que
+          mantém a alternância de brilho por nth-child e o ser-coberto. */}
       {items.map((c, i) => (
-        <div className="lp-capstack-panel" key={c.t}>
-          <CapContent c={c} flip={i % 2 === 1} />
-        </div>
+        c.anim === "pbl" ? <PblPanel c={c} key={c.t} />
+          : c.anim === "skin" ? <SkinPanel c={c} key={c.t} />
+          : (
+            <div className="lp-capstack-panel" key={c.t}>
+              <CapContent c={c} flip={i % 2 === 1} />
+            </div>
+          )
       ))}
       {children}
     </div>
@@ -617,6 +1303,10 @@ export default function Landing() {
               pilha; depois dele o site segue normal (planos). */}
           <CapStack items={CAPS}>
             <section className="lp-capstack-panel lp-steps-panel" id="how-it-works" aria-labelledby="steps-h">
+              {/* Mesmo campo de riscos do rodapé. Densidade abaixo do padrão:
+                  aqui ele fica ATRÁS de texto corrido, e na densidade cheia os
+                  riscos competem com a leitura em vez de dar profundidade. */}
+              <Field variant="stars" density={0.55} className="lp-steps-field" />
               <div className="lp-panel-in">
                 <h2 id="steps-h" data-reveal>How it works</h2>
                 <div className="lp-steps-grid">
@@ -695,9 +1385,6 @@ export default function Landing() {
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
       <footer className="lp-foot">
-        <div className="lp-foot-card">
-          <Field variant="stars" className="lp-foot-field" />
-        </div>
         <div className="lp-foot-grid">
           <p className="lp-foot-claim">The room where soft skills happen</p>
           <div className="lp-foot-col">
