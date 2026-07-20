@@ -807,6 +807,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // A apresentação fica SEMPRE no frame ao lado da câmera do facilitador e da grade
   // de alunos — nunca ocupa a tela inteira (nem na plenária/questões).
   const [chartHidden, setChartHidden] = useState(false);
+  // Filtro da legenda do gráfico (séries ocultas) — SINCRONIZADO: o controlador aplica
+  // e replica para os alunos por dados; o aluno só reflete (não interage).
+  const [chartFilter, setChartFilter] = useState<string[]>([]);
+  const toggleChartSeries = (name: string) =>
+    setChartFilter((f) => (f.includes(name) ? f.filter((x) => x !== name) : [...f, name]));
   const [stageBusy, setStageBusy] = useState(false);
   const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
   // Fallback quando o pacote NÃO manda a lista pré-carregada (`pblQuestions` vazio):
@@ -870,6 +875,11 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             if (prev && prev.total === total && prev.list.join("") === list.join("")) return prev;
             return { list, total };
           });
+        }
+        // Filtro do gráfico aplicado pelo facilitador → replica aqui (dedupe: reenviado a cada 3s).
+        if (m?.source === "webconf" && m?.type === "chart-filter" && Array.isArray(m.hidden)) {
+          const h: string[] = m.hidden.map(String);
+          setChartFilter((prev) => (prev.join("") === h.join("") ? prev : h));
         }
       } catch { /* */ }
     };
@@ -962,6 +972,25 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
   }, [amController, room, pblStage, qCount, pblQuestions, qBodies, plenaryTotal]);
+
+  // Filtro do gráfico: o controlador transmite as séries ocultas → o gráfico do aluno
+  // fica sincronizado. Reenvia a cada 3s enquanto o gráfico está no ar (quem entra
+  // depois já pega o filtro atual).
+  useEffect(() => {
+    if (!amController || !room || !chartForStaff) return;
+    const send = () => {
+      if (room.state !== ConnectionState.Connected) return;
+      try {
+        const data = new TextEncoder().encode(JSON.stringify({
+          source: "webconf", type: "chart-filter", hidden: chartFilter,
+        }));
+        room.localParticipant?.publishData(data, { reliable: true })?.catch(() => {});
+      } catch { /* */ }
+    };
+    send();
+    const id = setInterval(send, 3000);
+    return () => clearInterval(id);
+  }, [amController, room, chartForStaff, chartFilter]);
 
   // Re-recorta a transmissão para a área do pacote sempre que ela (re)aparece — ex.: após
   // os grupos o iframe remonta e o CropTarget antigo fica órfão (o aluno veria preto).
@@ -1199,7 +1228,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               chartForStaff ? (
                 // "Liberar análise de riscos" em diante: SÓ o gráfico (ocultável).
                 !chartHidden ? (
-                  <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
+                  <div className="vr-pbl-present-big">
+                    <RiskChart roomId={roomId} canFilter showPending
+                      hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries} />
+                  </div>
                 ) : null
               ) : showDimensions ? (
                 // Análise situacional: cascata das DIMENSÕES de risco (injetadas na sala).
@@ -1226,11 +1258,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 </div>
               ) : null
             ) : chartForStudents ? (
-              // "Mostrar gráfico" em diante: o aluno também vê o gráfico.
-              <div className="vr-pbl-present-big"><RiskChart roomId={roomId} /></div>
+              // "Mostrar gráfico" em diante: o aluno também vê o gráfico — ESTÁTICO
+              // (sem hover/tooltip/filtro e sem a contagem de pendentes).
+              <div className="vr-pbl-present-big">
+                <RiskChart roomId={roomId} hiddenSeries={chartFilter} />
+              </div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
-              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} /></div>
+              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
             ) : showQuestionsArea && plenaryQ?.list?.length ? (
               // Aluno na plenária: recebe as questões por dados e mostra a MESMA cascata.
               <div className="vr-pbl-present-big">
@@ -1444,7 +1479,7 @@ const STEPS: StepDef[] = [
   { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
   { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
   { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
-  { id: "situational",        action: "Análise situacional",                  head: "Plenária" },
+  { id: "situational",        action: "Análise situacional",                  head: "Análise situacional" },
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
   { id: "show_chart",         action: "Mostrar gráfico",                      head: "Análise situacional" },
   { id: "closing",            action: "Encerramento",                         head: "Análise situacional" },
@@ -1514,14 +1549,20 @@ function wrapText(text: string, max: number): string[] {
     else { lines.push(cur); cur = w; }
   }
   if (cur) lines.push(cur);
-  let out = lines.slice(0, 2);
-  if (lines.length > 2 && out.length === 2) out[1] += "…";
-  return out.map((l) => (l.length > 17 ? l.slice(0, 16) + "…" : l));
+  return lines;   // sem corte: o nome da dimensão aparece inteiro (quebra em quantas linhas precisar)
 }
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
-function RiskChart({ roomId }: { roomId: string }) {
+function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSeries = [], onToggleSeries }: {
+  roomId: string;
+  /** Quem controla a sessão filtra pela legenda; o aluno só segue o filtro (mas explora o gráfico). */
+  canFilter?: boolean;
+  /** Quantos alunos ainda faltam responder — informação de condução, só para o facilitador. */
+  showPending?: boolean;
+  /** Filtro da legenda — sincronizado: o do facilitador replica no gráfico do aluno. */
+  hiddenSeries?: string[]; onToggleSeries?: (name: string) => void;
+}) {
   const sdk = useSDK();
   const [chart, setChart] = useState<any | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "wait" | "nodim">("loading");
@@ -1553,10 +1594,20 @@ function RiskChart({ roomId }: { roomId: string }) {
     series.push({ name: g.name || `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
   });
 
+  const total = chart.total || 0;
+  const completed = chart.completed || 0;          // respondeu TODAS as dimensões
+  const pending = Math.max(0, total - completed);
   return (
     <div className="vr-chart-wrap">
-      <div className="vr-chart-title">Questionário de Riscos <span className="vr-chart-sub">· {chart.total || 0} aluno(s)</span></div>
-      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={chart.total || 0} />
+      <div className="vr-chart-title">
+        Radar de Riscos
+        {/* Contagem só no gráfico do facilitador — o aluno não precisa ver quem falta. */}
+        {showPending && (
+          <span className="vr-chart-sub"> · {completed} concluíram · <b className="vr-chart-pending">{pending} faltam</b></span>
+        )}
+      </div>
+      <RadarSvg dims={dims} series={series} max={12} answered={chart.answered || []} total={total}
+        canFilter={canFilter} hidden={hiddenSeries} onToggle={onToggleSeries} />
     </div>
   );
 }
@@ -1604,9 +1655,10 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   );
 }
 
-/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). As dimensões vêm do
- *  dimensionsId informado na criação da sala (via /risk-chart, liberado a qualquer
- *  participante). Aparecem todas de uma vez → sem progresso/realce de "mais recente". */
+/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). Vêm do conjunto
+ *  escolhido na criação da sala (`risk_dimensions`, sem depender de aluno); fallback
+ *  para o /risk-chart em salas antigas. Usa o MESMO componente/CSS/animação das
+ *  questões da plenária (QuestionCascade com progress + emphasize). */
 function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
   const sdk = useSDK();
   const [fetched, setFetched] = useState<string[]>([]);
@@ -1624,7 +1676,9 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   }, [roomId, hasRoomDims]);
   const dims = hasRoomDims ? (roomDims as string[]) : fetched;
   return dims.length ? (
-    <QuestionCascade items={dims} label="Dimensões de risco" icon="🎯" />
+    // Mesma animação/CSS das questões da plenária: mesmo componente e mesmas flags
+    // (progress + emphasize) → cards idênticos, com dots e realce do último.
+    <QuestionCascade items={dims} total={dims.length} label="Dimensões de risco" icon="🎯" progress emphasize />
   ) : (
     <div className="vr-pbl-question">
       <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
@@ -1632,40 +1686,76 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   );
 }
 
-function RadarSvg({ dims, series, max, answered, total }: {
+function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidden = [], onToggle }: {
   dims: string[]; series: { name: string; color: string; values: number[] }[]; max: number;
   answered: number[]; total: number;
+  /** Legenda clicável — só quem controla a sessão filtra; o aluno explora o gráfico
+   *  (hover/tooltip) mas apenas SEGUE o filtro aplicado pelo facilitador. */
+  canFilter?: boolean;
+  /** Séries ocultas — estado SINCRONIZADO (o filtro do facilitador replica no aluno). */
+  hidden?: string[]; onToggle?: (name: string) => void;
 }) {
   const N = dims.length;
   const [hover, setHover] = useState<number | null>(null);
-  // Legenda vira FILTRO: clicar oculta/mostra a série. `vis` = séries visíveis.
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
-  const vis = series.filter((s) => !hidden.has(s.name));
-  const toggleSeries = (name: string) =>
-    setHidden((h) => { const n = new Set(h); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  const hiddenSet = new Set(hidden);
+  const vis = series.filter((s) => !hiddenSet.has(s.name));
   if (N < 3) return <div className="vr-chart-msg">Dimensões insuficientes para o radar.</div>;
-  const size = 360, cx = size / 2, cy = size / 2, R = size / 2 - 72;
+  // Canvas de referência só para posicionar: o viewBox final é recortado no conteúdo
+  // (ver `vb` abaixo), então estas medidas não deixam sobra na tela.
+  const W = 460, H = 380, cx = W / 2, cy = H / 2, R = 116;
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, v: number): [number, number] => {
     const r = (Math.max(0, Math.min(max, v)) / max) * R;
     return [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
   };
   const poly = (vals: number[]) => dims.map((_, i) => point(i, vals[i] ?? 0).join(",")).join(" ");
-  const rings = [0.25, 0.5, 0.75, 1];
+  // Anéis de 2 em 2 (0 → max), cada um rotulado com o seu valor.
+  const RING_STEP = 2;
+  const rings: number[] = [];
+  for (let v = RING_STEP; v <= max + 0.001; v += RING_STEP) rings.push(v);
+
+  // Rótulo de cada dimensão: posição calculada uma vez só, porque também é ela que
+  // define os limites reais do desenho (abaixo).
+  const labels = dims.map((d, i) => {
+    const lx = cx + (R + 10) * Math.cos(angle(i));
+    const ly = cy + (R + 10) * Math.sin(angle(i));
+    const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
+    const lines = wrapText(d, 16);
+    const rows = lines.length + 1;                        // + a linha do contador
+    // O bloco cresce SEMPRE afastando-se do centro: acima do eixo ele sobe (senão a
+    // última linha desce em cima do anel e da sua escala), abaixo ele desce, e nas
+    // laterais fica centrado no vértice.
+    const y0 = ly < cy - 8 ? ly - (rows - 1) * 11
+      : ly > cy + 8 ? ly
+        : ly - ((rows - 1) * 11) / 2;
+    return { lx, ly, anchor, lines, rows, y0 } as const;
+  });
+
+  // viewBox colado no desenho: o polígono nunca preenche o retângulo (ainda mais com
+  // nº ímpar de dimensões), e a faixa morta que sobra empurraria a legenda e o tooltip
+  // para longe do gráfico. Aqui a caixa é a união do radar com os rótulos.
+  let x0 = cx - R, x1 = cx + R, yA = cy - R, yB = cy + R;
+  labels.forEach((L) => {
+    const w = Math.max(...L.lines.map((l) => l.length), 9) * 4.7;   // ~largura do texto
+    const lx0 = L.anchor === "middle" ? L.lx - w / 2 : L.anchor === "start" ? L.lx : L.lx - w;
+    x0 = Math.min(x0, lx0); x1 = Math.max(x1, lx0 + w);
+    yA = Math.min(yA, L.y0 - 8); yB = Math.max(yB, L.y0 + (L.rows - 1) * 11 + 4);
+  });
+  const PAD = 4;
+  const vb = `${x0 - PAD} ${yA - PAD} ${x1 - x0 + PAD * 2} ${yB - yA + PAD * 2}`;
   return (
     <div className="vr-radar">
-      <svg viewBox={`0 0 ${size} ${size}`} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
-        {rings.map((f, ri) => (
-          <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, max * f).join(",")).join(" ")} />
+      <svg viewBox={vb} className="vr-radar-svg" onMouseLeave={() => setHover(null)}>
+        {rings.map((v, ri) => (
+          <polygon key={ri} className="vr-radar-ring" points={dims.map((_, i) => point(i, v).join(",")).join(" ")} />
         ))}
-        {dims.map((d, i) => {
+        {/* escala: valor de cada anel, lido no eixo de cima */}
+        {rings.map((v, ri) => {
+          const [rx, ry] = point(0, v);
+          return <text key={`rv${ri}`} className="vr-radar-ringval" x={rx + 4} y={ry + 3}>{v}</text>;
+        })}
+        {labels.map(({ lx, anchor, lines: nameLines, y0 }, i) => {
           const [ax, ay] = point(i, max);
-          const lx = cx + (R + 10) * Math.cos(angle(i));
-          const ly = cy + (R + 10) * Math.sin(angle(i));
-          const anchor = Math.abs(lx - cx) < 12 ? "middle" : lx > cx ? "start" : "end";
-          const nameLines = wrapText(d, 14);
-          const rows = nameLines.length + 1;                  // + a linha do contador
-          const y0 = ly - ((rows - 1) * 11) / 2;
           return (
             <g key={i}>
               <line className={hover === i ? "vr-radar-axis on" : "vr-radar-axis"} x1={cx} y1={cy} x2={ax} y2={ay} />
@@ -1685,41 +1775,42 @@ function RadarSvg({ dims, series, max, answered, total }: {
           const [px, py] = point(hover, s.values[hover] ?? 0);
           return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
         })}
-        {/* áreas invisíveis por dimensão (hover) */}
+        {/* áreas invisíveis por dimensão (hover) — o aluno também explora o gráfico */}
         {dims.map((_, i) => {
           const [ex, ey] = point(i, max);
           return <line key={`hit${i}`} x1={cx} y1={cy} x2={ex} y2={ey} stroke="transparent" strokeWidth={34}
             style={{ cursor: "pointer" }} onMouseEnter={() => setHover(i)} />;
         })}
-        {/* tooltip — dimensionado p/ caber cabeçalho (2 linhas) + todas as séries */}
-        {hover !== null && (() => {
-          const [ox, oy] = point(hover, max);
-          const w = 176, h = 60 + Math.max(1, vis.length) * 15;
-          const x = Math.max(4, Math.min(size - w - 4, ox > cx ? ox - w - 8 : ox + 8));
-          const y = Math.max(4, Math.min(size - h - 4, oy - h / 2));
-          return (
-            <foreignObject x={x} y={y} width={w} height={h} style={{ overflow: "visible" }}>
-              <div className="vr-radar-tip">
-                <div className="vr-radar-tip-h">{dims[hover]}</div>
-                <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
-                {vis.map((s) => (
-                  <div key={s.name} className="vr-radar-tip-row">
-                    <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
-                    <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
-                  </div>
-                ))}
-              </div>
-            </foreignObject>
-          );
-        })()}
       </svg>
+      {/* Slot fixo entre o radar e a legenda: o tooltip sempre sai AQUI, nunca por cima
+          do gráfico. O espaço fica reservado mesmo sem hover, senão o radar redimensiona
+          a cada passada do mouse. */}
+      <div className="vr-radar-tipslot">
+        {hover !== null && (
+          <div className="vr-radar-tip">
+            <div className="vr-radar-tip-h">{dims[hover]}</div>
+            <div className="vr-radar-tip-a">{answered[hover] ?? 0}/{total} responderam</div>
+            {vis.map((s) => (
+              <div key={s.name} className="vr-radar-tip-row">
+                <i style={{ background: s.color }} /><span className="vr-radar-tip-n">{s.name}</span>
+                <b>{(s.values[hover] ?? 0).toFixed(1)}</b>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="vr-radar-legend">
-        {series.map((s) => (
-          <button key={s.name} type="button" className="vr-radar-leg" data-off={hidden.has(s.name) || undefined}
-            onClick={() => toggleSeries(s.name)} title="Clique para mostrar/ocultar esta série">
+        {series.map((s) => (canFilter ? (
+          <button key={s.name} type="button" className="vr-radar-leg" data-off={hiddenSet.has(s.name) || undefined}
+            onClick={() => onToggle?.(s.name)} title="Clique para mostrar/ocultar esta série (replica para os alunos)">
             <i style={{ background: s.color }} />{s.name}
           </button>
-        ))}
+        ) : (
+          // Aluno: legenda informativa (sem clique), refletindo o filtro do facilitador.
+          <span key={s.name} className="vr-radar-leg" data-static="1" data-off={hiddenSet.has(s.name) || undefined}>
+            <i style={{ background: s.color }} />{s.name}
+          </span>
+        )))}
       </div>
     </div>
   );
