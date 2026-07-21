@@ -33,6 +33,19 @@
    Duas camadas: os pontos da malha, discretos e sempre visíveis, e as cápsulas
    coloridas, que só existem onde a onda tem amplitude.
 
+   ── No toque ────────────────────────────────────────────────────────────────
+   O centro da projeção não precisa ser um cursor — precisa ser um PONTO. Sem
+   ponteiro que possa pairar, ele passeia sozinho pelo canvas (AMB_X/AMB_Y) e o
+   dedo assume o volante quando encosta, inclusive durante a rolagem. É a mesma
+   cena, com outro motorista.
+
+   Duas coisas mudam junto, e sem elas ligar o campo no toque não adiantaria:
+     · o ENVELOPE encolhe com o canvas (escalar()) — medido em px contra tela
+       grande, o anel tem pico em 460 e cairia fora de um retrato de 390;
+     · onda e matiz encurtam na mesma proporção, senão sobra meia oscilação
+       dentro do anel menor.
+   No ponteiro fino tudo isso vale 1 e as contas são as de sempre.
+
    O rAF só existe enquanto o canvas está em tela, e prefers-reduced-motion
    pinta um quadro estático e vai embora.
    ───────────────────────────────────────────────────────────────────────────── */
@@ -82,6 +95,14 @@ const HUE_SPAN = 180;
 const HUE_K = 0.36;     // quanto o matiz corre por pixel
 const HUE_W = 22;       // e por segundo — é o que troca a cor sozinho
 const LERP = 0.14;      // suavização do cursor: o anel segue, não teleporta
+/* Passeio do centro quando NÃO há ponteiro que possa pairar (toque). Duas
+   senoides de períodos incomensuráveis — a razão é 0.618, irracional —, então a
+   volta nunca se fecha: um círculo puro leria como GIF em loop, que é
+   exatamente o que não se quer de um campo que deve parecer vivo.
+   Lento de propósito: ~57s por travessia. O campo acompanha a leitura, não
+   disputa com ela. */
+const AMB_X = 0.11;
+const AMB_Y = 0.11 * 0.618;
 
 /* Canvas não enxerga custom property, então a rampa aparece aqui em RGB cru —
    é a única duplicação de token do módulo. Os pontinhos acompanham --ink
@@ -151,11 +172,42 @@ export function initParticles(
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
 
+  /* Decidido AQUI, e não lá embaixo junto dos listeners, porque agora ele
+     governa também a escala do envelope — que é lida no primeiro resize(),
+     antes de qualquer listener existir. */
+  const fine = cursorField && window.matchMedia("(pointer: fine)").matches;
+
   let w = 0, h = 0, dpr = 1;
   let ps: P[] = [];
   let raf = 0;
   let running = false;
   let t0 = 0;
+
+  /* ── Escala do envelope ─────────────────────────────────────────────────────
+     INNER/OUTER foram MEDIDOS em px contra tela grande: o anel tem pico em
+     460px e some por volta de 780. Num retrato de 390px esse pico cai fora da
+     tela — sobra só a borda de subida da onda, e o anel (que é o efeito) nunca
+     chega a aparecer. Por isso não bastava ligar o campo no toque: ligado com
+     as medidas de desktop, ele acende fora do quadro.
+
+     No ponteiro FINO o fator vale 1 e todas as contas abaixo são idênticas às
+     de antes, termo a termo — o desktop não muda nada. */
+  let inner = INNER, outer = OUTER, span = SPAN, outer2 = OUTER2;
+  let waveK = WAVE_K, hueK = HUE_K, gain = GAIN;
+  const escalar = () => {
+    // Piso em 0.4: abaixo disso o anel fica menor que o vão entre pontos da
+    // malha e a onda deixa de ter partículas onde acontecer.
+    const k = fine ? 1 : Math.max(0.4, Math.min(1, Math.min(w, h) / 900));
+    inner = INNER * k; outer = OUTER * k; span = SPAN * k; outer2 = outer * outer;
+    /* Onda e matiz correm POR PIXEL. Encolher o anel sem encurtar junto o
+       comprimento de onda deixaria meia oscilação dentro dele — o anel viraria
+       um arco de cor só, sem as bandas que correm pra fora. */
+    waveK = WAVE_K / k; hueK = HUE_K / k;
+    /* O rastro NÃO acompanha na mesma proporção: em k=0.43 ele cairia para 4px
+       e sumiria contra os pontinhos. Meio termo — encolhe, mas continua a ser
+       uma cápsula e não um ponto. */
+    gain = GAIN * (0.55 + 0.45 * k);
+  };
 
   // Cursor: cru vindo do ponteiro, suave usado pelo campo. O listener não faz
   // conta nenhuma — só guarda dois números; a decisão toda sai no rAF.
@@ -175,6 +227,7 @@ export function initParticles(
     const per = variant === "grid" ? 2600 : variant === "specks" ? 3800 : 5200;
     const n = Math.round(((w * h) / per) * density);
     ps = Array.from({ length: Math.max(12, Math.min(n, 1400)) }, (_, i) => make(variant, w, h, i, n));
+    escalar();   // depende de w/h — tem de vir depois da medida e antes do desenho
     draw(0);
   };
 
@@ -190,17 +243,17 @@ export function initParticles(
         if (live) {
           const dx = p.x - curX, dy = p.y - curY;
           const d2 = dx * dx + dy * dy;
-          if (d2 < OUTER2) {
+          if (d2 < outer2) {
             const d = Math.sqrt(d2);
             // Oscilação em profundidade: a pulsação da malha, correndo pra fora.
-            const z = Math.sin(d * WAVE_K - t * WAVE_W);
+            const z = Math.sin(d * waveK - t * WAVE_W);
             // Envelope medido: zera nas duas bordas — é o que abre o buraco.
-            const env = d < INNER ? 0 : Math.sin(((d - INNER) / SPAN) * Math.PI);
-            const amp = GAIN * env * z * p.len;
+            const env = d < inner ? 0 : Math.sin(((d - inner) / span) * Math.PI);
+            const amp = gain * env * z * p.len;
             const mag = amp < 0 ? -amp : amp;
             if (mag > 0.9) {
               // `%` em JS pode devolver negativo — o duplo mod garante [0, SPAN).
-              const ph = (((d * HUE_K - t * HUE_W) % HUE_SPAN) + HUE_SPAN) % HUE_SPAN;
+              const ph = (((d * hueK - t * HUE_W) % HUE_SPAN) + HUE_SPAN) % HUE_SPAN;
               const hue = HUE_0 - ph + 360;
               // Direção radial normalizada, girada pelo tremor da partícula.
               // O deslocamento é colinear com ela: é isso que aponta a cápsula
@@ -208,7 +261,13 @@ export function initParticles(
               const nx = dx / d, ny = dy / d;
               const ca = (nx * p.cj - ny * p.sj) * amp;
               const sa = (ny * p.cj + nx * p.sj) * amp;
-              const k = mag / 18 > 1 ? 1 : mag / 18;
+              /* Alpha proporcional ao rastro, normalizado pelo PICO POSSÍVEL
+                 (2·gain) e não pelo 18 cru que estava aqui. Os dois dão o mesmo
+                 número no desktop, onde gain é 9; num rastro encolhido o 18
+                 fixo achataria o campo inteiro para meia opacidade e o anel
+                 chegaria lavado justo onde ele é a única coisa a ver. */
+              const kk = mag / (2 * gain);
+              const k = kk > 1 ? 1 : kk;
               ctx.globalAlpha = 0.25 + 0.75 * k;
               ctx.strokeStyle = `hsl(${hue} 85% 58%)`;
               ctx.lineWidth = p.th;
@@ -257,14 +316,30 @@ export function initParticles(
     if (!t0) t0 = now;
     const t = (now - t0) / 1000;
 
-    // Uma leitura de layout por frame, antes de qualquer escrita: o canvas muda
-    // de lugar com o scroll, então o retângulo não pode ser cacheado no init.
-    if (cursorField && hasCursor) {
-      const r = canvas.getBoundingClientRect();
-      const tx = rawX - r.left, ty = rawY - r.top;
-      if (!curReady) { curX = tx; curY = ty; curReady = true; }   // sem voo inicial
-      curX += (tx - curX) * LERP;                                  // o anel segue suave
-      curY += (ty - curY) * LERP;
+    if (cursorField) {
+      let tx = 0, ty = 0, mira = false;
+      if (hasCursor) {
+        // Uma leitura de layout por frame, antes de qualquer escrita: o canvas
+        // muda de lugar com o scroll, então o retângulo não pode ser cacheado.
+        const r = canvas.getBoundingClientRect();
+        tx = rawX - r.left; ty = rawY - r.top; mira = true;
+      } else if (!fine) {
+        /* Sem ponteiro capaz de pairar, o campo se dirige SOZINHO: o centro da
+           projeção passeia pelo canvas e a onda acontece de qualquer jeito.
+           Sem isto o telefone via só a poeira de pontinhos — a malha pulsante,
+           que é o efeito inteiro desta seção, simplesmente não existia lá,
+           porque `hasCursor` nunca virava true sem mouse.
+           O dedo, quando encosta, assume o volante (ver os listeners de touch);
+           ao soltar, o LERP devolve o centro a este passeio sem salto. */
+        tx = w * (0.5 + 0.3 * Math.sin(t * AMB_X));
+        ty = h * (0.5 + 0.24 * Math.sin(t * AMB_Y + 1.1));
+        mira = true;
+      }
+      if (mira) {
+        if (!curReady) { curX = tx; curY = ty; curReady = true; }   // sem voo inicial
+        curX += (tx - curX) * LERP;                                 // o anel segue suave
+        curY += (ty - curY) * LERP;
+      }
     }
 
     for (const p of ps) {
@@ -297,20 +372,51 @@ export function initParticles(
   // O canvas é pointer-events:none e fica atrás do texto, então o ponteiro é
   // ouvido na janela e convertido — assim o campo continua valendo com o cursor
   // sobre a headline ou os botões.
-  const onMove = (e: PointerEvent) => { rawX = e.clientX; rawY = e.clientY; hasCursor = true; };
-  const onLeave = () => { hasCursor = false; curReady = false; };
-  const fine = cursorField && window.matchMedia("(pointer: fine)").matches;
+  const solta: (() => void)[] = [];
+
   if (fine) {
-    // Só ponteiro fino: em touch não há hover, e prender o dedo pra acender o
-    // anel só atrapalharia o scroll.
+    const onMove = (e: PointerEvent) => { rawX = e.clientX; rawY = e.clientY; hasCursor = true; };
+    const onLeave = () => { hasCursor = false; curReady = false; };
     window.addEventListener("pointermove", onMove, { passive: true });
     document.addEventListener("pointerleave", onLeave, { passive: true });
+    solta.push(() => {
+      window.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerleave", onLeave);
+    });
+  } else if (cursorField) {
+    /* Toque: o dedo dirige o campo enquanto está na tela.
+       `touch*` e NÃO `pointer*`, e a diferença aqui não é estilo. No toque o
+       navegador CANCELA a sequência de pointer assim que decide que o gesto é
+       rolagem (pointercancel) — e é justamente durante a rolagem que se quer o
+       anel acompanhando o polegar. Os eventos de toque continuam chegando.
+
+       Passivos: nada aqui chama preventDefault, e declarar isso mantém a
+       rolagem no thread do compositor. O campo segue o dedo SEM disputar o
+       gesto: não há nada a prender, e é por isso que ligar o efeito no toque
+       não repete o problema que fez desligá-lo. */
+    const onToque = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      rawX = t.clientX; rawY = t.clientY; hasCursor = true;
+    };
+    // curReady FICA como está: zerá-lo devolveria o centro ao passeio com um
+    // salto. Só `hasCursor` cai, e o LERP faz a passagem.
+    const onSoltou = () => { hasCursor = false; };
+    window.addEventListener("touchstart", onToque, { passive: true });
+    window.addEventListener("touchmove", onToque, { passive: true });
+    window.addEventListener("touchend", onSoltou, { passive: true });
+    window.addEventListener("touchcancel", onSoltou, { passive: true });
+    solta.push(() => {
+      window.removeEventListener("touchstart", onToque);
+      window.removeEventListener("touchmove", onToque);
+      window.removeEventListener("touchend", onSoltou);
+      window.removeEventListener("touchcancel", onSoltou);
+    });
   }
 
   return () => {
     ro.disconnect(); io.disconnect();
-    window.removeEventListener("pointermove", onMove);
-    document.removeEventListener("pointerleave", onLeave);
+    solta.forEach((f) => f());
     if (raf) cancelAnimationFrame(raf);
   };
 }

@@ -46,3 +46,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# ---------- Playwright ----------
+# Artefatos de execução: relatórios, traces e capturas de falha.
+test-results/
+playwright-report/

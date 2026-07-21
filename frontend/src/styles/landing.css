@@ -566,7 +566,11 @@
 .lp-capstack-panel {
   position: sticky;
   top: 0;
-  min-height: 100vh;
+  /* svh, não vh: no telefone o vh conta a área atrás da barra de endereço
+     retrátil, e o painel ficaria mais alto que a tela visível — o rodapé do
+     capítulo caía sob a barra justo enquanto ela está à mostra. No desktop as
+     duas unidades são o mesmo número, então isto não mexe em nada lá. */
+  min-height: 100svh;
   display: grid;
   align-content: center;
   background: var(--bg);
@@ -637,28 +641,42 @@
   line-height: 1.6;
 }
 /* A cena do desktop cresce por scale (os elementos usam px fixos; recalcular
-   tudo seria refazer a arte). A origem central mantém o enquadramento; o
-   scale do recuo (GSAP) no .lp-cap compõe com este sem conflito. */
+   tudo seria refazer a arte). A origem central mantém o enquadramento; o scale
+   do recuo (GSAP) no .lp-cap compõe com este sem conflito.
+
+   POR QUE POR BREAKPOINT, e não por container query: `scale()` recebe NÚMERO e
+   `cqw` é COMPRIMENTO — um `clamp(0.86, 0.44cqw, 1.7)` mistura os dois tipos,
+   é declaração inválida e o navegador a descarta inteira. O efeito não é cair
+   para o piso do clamp: é cair para `transform: none`, ou seja, escala 1. Foi o
+   que encolheu o computador no desktop.
+
+   Os tetos saem da largura do card: a tomada mora em `left: 190px`, fora da
+   caixa de 190px do palco, então com origem no centro a ponta direita vai a
+   113·escala do meio, e isso tem de caber em metade do card. O caso mais
+   apertado NÃO é o telefone e sim ~1024px, onde a coluna do card é estreita
+   (433px) apesar de a janela ser larga. */
 .lp-capstack-panel .lp-boot-stage {
-  transform: scale(1.7);
+  transform: scale(1.4);
 }
+
+@media (min-width: 768px) {
+  .lp-capstack-panel .lp-boot-stage {
+    transform: scale(1.8);
+  }
+}
+
+@media (min-width: 1101px) {
+  .lp-capstack-panel .lp-boot-stage {
+    transform: scale(2.1);
+  }
+}
+
 /* Selos dos outros painéis crescem junto, senão o computador grande deixaria os
    ícones pequenos ao lado. */
 .lp-capstack-panel .lp-card-icon {
   width: clamp(96px, 9.5vw, 140px);
   font-size: clamp(2rem, 3.8vw, 3.2rem);
 }
-/* ── Painel de PBL: a cena presa na tela ─────────────────────────────────────
-   O painel fica ALTO (--pbl-scroll, vindo do TSX) e um filho sticky de 100vh
-   segura a cena — é o CSS que faz o scroll-lock, não o `pin` do ScrollTrigger,
-   que quebraria a sanfona (ver PblPanel em Landing.tsx). A altura extra é o que
-   CRIA o scroll que o `scrub` consome: mexer em --pbl-scroll muda a velocidade
-   da cena e o range do trigger de uma vez só.
-
-   Tudo aqui é o estado de REPOUSO, que é o estado FINAL da cena: grupos
-   formados, leitura à mostra, facilitador no lugar. Os `.from()` do GSAP é que
-   puxam para a grade e para o apagado. Sem JS — reduced-motion, mobile, ou o
-   chunk falhando — a cena aparece pronta em vez de invisível. */
 .lp-pbl-panel {
   height: var(--pbl-scroll);
   display: block;
@@ -687,7 +705,7 @@
 .lp-pbl-stick {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100svh;   /* svh pela mesma razão do .lp-capstack-panel */
   display: grid;
   grid-template-columns: 1.15fr 1fr;
   gap: clamp(24px, 5vw, 90px);
@@ -760,6 +778,14 @@
   position: relative;
   align-self: stretch;
   min-height: 460px;
+  /* Container de consulta: é o que deixa avatar, offsets e card medirem-se
+     contra o PALCO em vez da viewport. Sem isto a cena quebrava entre 1001 e
+     ~1100px — as posições dos grupos são fração do palco e encolhem com ele,
+     mas as medidas em px não, então em tela estreita os chips se sobrepunham
+     (medido em 1024: 8 pares colididos, 4 sobre o card, 2 fora do palco).
+     Consultar a viewport não resolveria: o palco é uma COLUNA, e a relação
+     entre ela e a janela muda com o grid. */
+  container-type: inline-size;
 }
 .lp-pbl-room {
   position: absolute;
@@ -767,18 +793,22 @@
 }
 
 /* O problema, no centro do palco: o núcleo em volta do qual os grupos se
-   organizam. Largura em px (não em %) porque o que manda aqui é a legibilidade
-   da frase, que não deve encolher junto com o palco. Centrado por margin
-   negativa, como os avatares — transform fica reservado ao GSAP. */
+   organizam. */
 .lp-pbl-problem {
   position: absolute;
   left: 50%;
   top: 48%;
-  /* 230px é o teto: mais que isso e o card encosta nos grupos que o ladeiam
-     (medido — a folga cai para menos de 10px de cada lado). O caso é o texto
-     mais longo da cena, então é ele que define a altura. */
-  width: 230px;
-  margin: -72px 0 0 -115px;
+  /* 230px é o teto (o desenho de 1440, onde mais que isso já encostava nos
+     grupos que o ladeiam); 170px é o piso, abaixo do qual a frase vira uma
+     coluna de cinco linhas estreitas. Entre eles acompanha o palco. */
+  width: clamp(170px, 32cqw, 230px);
+  /* Centragem pela propriedade `translate`, e NÃO por margem negativa: com
+     largura fluida não há metade fixa para descontar. E `translate` é
+     propriedade INDEPENDENTE de `transform` — o navegador aplica translate
+     antes —, então o `scale` que o GSAP escreve em transform compõe com ela
+     em vez de apagá-la. Era por isso que os avatares precisavam de margem: lá
+     o GSAP anima x/y, que também são transform. Aqui ele só anima escala. */
+  translate: -50% -50%;
   padding: 16px 18px;
   border: 1px solid var(--line-2);
   border-radius: 14px;
@@ -811,13 +841,21 @@
   /* Token único: a centragem por margin negativa sai daqui, e os offsets de
      grupo em PBL_OFFSETS (Landing.tsx) acompanham este número — a distância
      entre vizinhos tem de passar de um diâmetro. Mexer aqui é mexer lá. */
-  --pbl-cw: 106px;
-  --pbl-ch: 32px;
+  /* Tudo em cqw (fração do PALCO) com piso e teto: o teto é o desenho de
+     1440px, que é onde a cena foi calibrada; o piso é o limite do legível —
+     abaixo dele o nome não cabe no chip e encolher deixa de resolver. Entre os
+     dois a cena acompanha a coluna sem cliff de breakpoint. */
+  --pbl-cw: clamp(82px, 17.3cqw, 106px);
+  --pbl-ch: clamp(26px, 5.2cqw, 32px);
   /* Fator dos offsets de grupo. Vale 1px no desktop (o px cru do PBL_OFFSETS)
      e encolhe no mobile junto com o chip — em palco estreito, offset de
      desktop empilha gente por cima de gente. Multiplicar número por
-     comprimento é calc válido: calc(40 * 0.72px) = 29px. */
-  --pbl-k: 1px;
+     comprimento é calc válido: calc(40 * 0.72px) = 29px.
+
+     Também em cqw: os lugares dentro do grupo têm de encolher junto com o
+     avatar, senão o grupo continua ocupando a largura de 1440 num palco de
+     466. 0.163cqw dá exatamente 1px no palco de 612px do desktop. */
+  --pbl-k: clamp(0.6px, 0.163cqw, 1px);
   /* O grupo (--gx/--gy, fração do palco) e o lugar dentro dele (--ox/--oy, em
      px) chegam do TSX; o calc mora aqui para o breakpoint poder remontá-lo. */
   /* O fallback encadeado NÃO é enfeite: --gx/--gy chegam por estilo INLINE do
@@ -826,7 +864,7 @@
      ignorado (foi o que aconteceu: os grupos ficaram na posição de desktop e
      quatro avatares caíam sobre o card). O breakpoint então escreve em
      `--gx-m`, que ninguém define inline, e este var() a prefere quando existe. */
-  left: calc(var(--gx-m, var(--gx)) * 100% + var(--ox) * var(--pbl-k));
+  left: calc(var(--gx-m, var(--gx)) * 100% + var(--ox) * var(--pbl-kx, var(--pbl-k)));
   top: calc(var(--gy-m, var(--gy)) * 100% + var(--oy) * var(--pbl-k));
   /* Largura FIXA, não `auto`: a centragem sai de margin negativa, que precisa
      de metade de um número conhecido. Com largura variável por nome, cada
@@ -962,7 +1000,11 @@
 .lp-skin-stick {
   position: sticky;
   top: 0;
-  height: 100vh;
+  /* svh, e este é o que mais doía: o override de `height` para esta cena mora
+     atrás de (max-height: 699px), que um 390x844 NÃO satisfaz — então o 100vh
+     chegava inteiro ao telefone e a sala vestida ficava com o rodapé sob a
+     barra de endereço. Ver .lp-capstack-panel. */
+  height: 100svh;
   display: grid;
   align-content: center;
   justify-items: start;
@@ -1239,15 +1281,21 @@
 
 /* Sem cena: mesma regra do painel de PBL — sem animação o scroll-lock não se
    justifica, e o repouso já é uma marca aplicada e legível. */
-@media (prefers-reduced-motion: reduce), (max-width: 1000px) {
+/* ── Faixas de comportamento das cenas ───────────────────────────────────────
+   Sem trava: reduced-motion, celular (<768) ou QUALQUER janela baixa demais
+   (<700) para a cena caber em 100vh — inclusive desktop redimensionado, onde
+   o lock não era um luxo a mais e sim conteúdo transbordando do stick.
+
+   ESTE SELETOR TEM DE CASAR com MQ_TRAVA/MQ_ENTRA em Landing.tsx. */
+@media (prefers-reduced-motion: reduce), (max-height: 699px) {
   .lp-skin-panel {
     height: auto;
-    min-height: 100vh;
+    min-height: 100svh;
   }
   .lp-skin-stick {
     position: static;
     height: auto;
-    min-height: 100vh;
+    min-height: 100svh;
   }
 }
 @media (max-width: 1000px) {
@@ -1265,12 +1313,46 @@
      config quebra linha no meio dos campos e a sala fica ilegível. */
   .lp-skin-scene {
     grid-template-columns: 1fr;
+    gap: 14px;              /* ver a compactação logo abaixo */
   }
   .lp-skin-bar {
     flex-wrap: wrap;
+    padding: 10px 12px;     /* idem */
   }
   .lp-skin-btn--cta {
     margin-left: 0;
+  }
+
+  /* ── Compactação da cena no telefone ──────────────────────────────────────
+     Empilhada, a cena mede ~790px (o número que já estava registrado aqui, e
+     que minha conta reproduz), contra ~753 de tela útil num 390x844 com a
+     barra do navegador à mostra. O estouro é pequeno, mas num grid centrado
+     ele vira conteúdo cortado nas DUAS pontas.
+
+     Ceder o respiro INTERNO, e não trocar o svh por vh: o vh só empurra o
+     corte para o momento em que a barra reaparece, e some com a mesma altura
+     do lado de baixo. Nada aqui toca no que a cena demonstra — é padding e
+     vão, e a prova da seção é que layout, controles e participantes NÃO mudam
+     entre as marcas, o que segue valendo termo a termo.
+
+     REVISAR num aparelho de 360x800, que é o caso mais apertado: lá a barra de
+     controles quebra em duas linhas e o texto ganha uma linha a mais. */
+  .lp-skin-stick {
+    gap: 12px;
+  }
+  .lp-skin-cfg {
+    padding: 12px;
+    gap: 8px;
+  }
+  .lp-skin-top {
+    padding: 10px 12px;
+  }
+  .lp-skin-grid {
+    padding: 10px;
+    gap: 8px;
+  }
+  .lp-skin-foot {
+    gap: 8px;
   }
 }
 
@@ -1279,15 +1361,21 @@
    simplesmente aparece. Vale para reduced-motion em qualquer largura e para
    mobile, onde prender a tela no toque é hostil — e são as mesmas duas
    condições que impedem o timeline de montar no TSX. */
-@media (prefers-reduced-motion: reduce), (max-width: 1000px) {
+/* ── Faixas de comportamento das cenas ───────────────────────────────────────
+   Sem trava: reduced-motion, celular (<768) ou QUALQUER janela baixa demais
+   (<700) para a cena caber em 100vh — inclusive desktop redimensionado, onde
+   o lock não era um luxo a mais e sim conteúdo transbordando do stick.
+
+   ESTE SELETOR TEM DE CASAR com MQ_TRAVA/MQ_ENTRA em Landing.tsx. */
+@media (prefers-reduced-motion: reduce), (max-height: 699px) {
   .lp-pbl-panel {
     height: auto;
-    min-height: 100vh;
+    min-height: 100svh;
   }
   .lp-pbl-stick {
     position: static;
     height: auto;
-    min-height: 100vh;
+    min-height: 100svh;
   }
 }
 @media (max-width: 1000px) {
@@ -1326,24 +1414,126 @@
      Aqui a cena vira VERTICAL: dois grupos no topo, o facilitador abaixo
      deles, o card no meio e o terceiro grupo embaixo. Só as frações mudam —
      os offsets dentro de cada grupo continuam vindo do TSX. */
+  /* Tamanhos FIXOS aqui, ao contrário do desktop, e isso é deliberado: são
+     dois modelos de dimensionamento porque são dois arranjos diferentes.
+
+     No desktop os grupos ladeiam o card e o que os aperta é a LARGURA da
+     coluna — daí os cqw. No mobile o arranjo é vertical dentro de um palco de
+     altura FIXA (560px), e o que aperta é a altura. Amarrar o espaçamento à
+     largura aqui produz o oposto do desejado: num tablet de 768 o palco fica
+     largo, o cqw estoura os offsets verticais e os chips saem por cima da
+     borda do palco (medido: 2 vazando em 768 e 1000, 8 pares colididos em
+     390). Palco de altura fixa pede número fixo. */
   .lp-pbl-p {
-    --pbl-cw: 92px;
-    --pbl-ch: 28px;
-    --pbl-k: 0.82px;
+    /* 66px, não 92: é o que paga o arranjo LADEADO (ver as frações no fim
+       deste bloco). Com pílula de 92 os dois grupos ocupavam 184px de um palco
+       de 350 e não sobrava largura para o card ficar ENTRE eles — daí a
+       composição empilhada de antes, que não se parecia com o desktop.
+       68px é o piso ditado pelo NOME MAIS LONGO, não um número escolhido: em
+       62 o "Marcus T." batia no text-overflow e aparecia "Marcus …" na cena.
+       Com o padding-inline em 6px sobram 56px úteis, que é o que ele mede em
+       0.64rem. Ao mexer no corpo do nome ou acrescentar nome mais longo em
+       PBL_NAMES, reconferir isto — a reticência não avisa, só aparece. */
+    --pbl-cw: 68px;
+    --pbl-ch: 26px;
+    --pbl-k: 0.8px;
+    padding-inline: 6px;
+    /* Jitter HORIZONTAL. Estava em 0.22 (±4px numa pílula de 92) para evitar
+       "coluna desalinhada" — e o remédio matou o paciente: ±4px é invisível, e
+       cada grupo virava uma COLUNA PERFEITA de quatro pílulas. Com as duas
+       colunas lado a lado, mais uma solta no meio e outra embaixo, a cena
+       deixava de ler como gente reunida e passava a ler como lista de nomes.
+
+       O agrupamento aqui é dito por PROXIMIDADE e mais nada — não há anel nem
+       contorno em volta de ninguém. Alinhamento perfeito é o que uma lista tem;
+       um punhado de gente, não. Com a pílula agora em 62px, ±7px já é 11% da
+       largura dela — visível, e é o que cabe sem encostar no card ao lado.
+       Este número entra na conta da largura do card, logo abaixo. */
+    --pbl-kx: 0.4px;
   }
   .lp-pbl-nome {
-    font-size: 0.7rem;
+    font-size: 0.64rem;
   }
-  .lp-pbl-p[data-c="0"] { --gx-m: 0.22; --gy-m: 0.12; }
-  .lp-pbl-p[data-c="1"] { --gx-m: 0.78; --gy-m: 0.12; }
-  .lp-pbl-p[data-c="2"] { --gx-m: 0.5;  --gy-m: 0.75; }
-  .lp-pbl-p[data-c="f"] { --gx-m: 0.5;  --gy-m: 0.26; }
+  /* O card ocupa QUASE A LARGURA do palco no retrato. Em 170px a mesma frase
+     virava seis linhas e o card ficava mais alto que largo, engolindo o meio da
+     cena e empurrando os grupos contra as bordas. Largo e baixo, ele volta a
+     ser o centro em torno do qual os grupos se organizam — que é o ponto. */
+  /* O card volta ao CENTRO do palco, com os grupos ao redor — a composição do
+     desktop. Era 86cqw ("quase a largura do palco"), o que obrigava tudo a
+     empilhar acima e abaixo dele; agora sobra flanco dos dois lados, que é o
+     que faz a cena dizer "em volta do problema".
+
+     A largura DERIVA do tamanho da pílula em vez de ser uma porcentagem solta,
+     e isso não é preciosismo: com 44cqw a folga dependia da largura da tela e
+     zerava em 360px (medido — dois chips encostavam no card). A conta é
+     geométrica e vale em qualquer largura:
+
+       grupo centrado em 0.15W, então sua borda interna fica em
+         0.15W + cw/2 + jitter
+       sobra para meio card:  0.5W − (0.15W + cw/2 + jitter + folga)
+       largura do card:       0.7W − cw − 2·jitter − 2·folga
+                              = 70% − 68 − 14 − 28  =  70% − 110px
+
+     A folga é 14px de cada lado. Era 8 e ficava encostado — o grupo lia como
+     colado no card em vez de ao lado dele. Este é o número a mexer se ainda
+     parecer apertado; cada pixel a mais aqui sai da largura do card.
+
+     O teto de 230px é o MESMO da regra base do desktop: sem ele, num tablet de
+     767 o card esticaria para ~390px e os grupos ficariam boiando longe dele.
+
+     O `top` fica de fora de propósito: sem override vale o 48% da base — o
+     mesmo do desktop. */
   .lp-pbl-problem {
-    top: 44%;
-    width: 168px;
-    margin-left: -84px;
-    margin-top: -68px;
+    width: min(70% - 110px, 230px);
+    /* O respiro interno cede junto: num card estreito, 18px de cada lado eram
+       um terço da caixa. */
+    padding: 12px;
+    /* Container para o texto lá dentro poder se medir contra o CARD (ver
+       abaixo), e não contra o palco. */
+    container-type: inline-size;
   }
+  /* O corpo do texto acompanha a largura do CARD, não a da tela — e isso é o
+     que paga a folga maior sem o card virar uma coluna de nove linhas.
+     A conta não é linear: apertar a caixa por 14px de cada lado tira ~2
+     caracteres por linha, e o texto responde com uma linha inteira a mais, que
+     custa 19px de ALTURA. Encolhendo o corpo junto, a contagem de linhas fica
+     estável e o card não cresce para cima até o crachá nem para baixo até o
+     grupo de trás.
+     O teto de 0.92rem é o corpo da regra base: onde o card tem largura (tablet,
+     desktop) nada muda. */
+  .lp-pbl-problem-t {
+    font-size: clamp(0.72rem, 11cqw, 0.92rem);
+  }
+  /* ── As frações voltam a ser as do DESKTOP ────────────────────────────────
+     Havia aqui um arranjo VERTICAL próprio — dois grupos no alto lado a lado,
+     facilitador, card, terceiro grupo embaixo. Ele existia porque a pílula de
+     92px não deixava nada ladear o card, e o resultado era uma composição que
+     não se parecia com a do desktop: em vez de grupos EM VOLTA do problema,
+     uma pilha de blocos com o problema no meio da fila.
+
+     Com a pílula em 66px e o card em 44cqw os flancos cabem, então os três
+     grupos voltam para onde o desktop os põe — e a forma de garantir isso é
+     não sobrescrever: --gx/--gy já chegam do TSX com as frações do desktop
+     (PBL_CLUSTERS), e apagar os --gx-m/--gy-m faz o var() cair neles. Um lugar
+     só define a composição, e as duas telas contam a mesma história.
+
+     Os --gx (horizontais) NÃO são sobrescritos: quem está à esquerda, à direita
+     e no meio é igual nas duas telas, e é isso que faz a cena ser reconhecível.
+
+     Os --gy são, e a razão é que a sala do telefone tem 560px de altura contra
+     ~756 do desktop, mas o que precisa caber DENTRO dela não encolheu junto: o
+     card tem 154px, o crachá do facilitador mora 14px abaixo da pílula, e os
+     lugares dentro de cada grupo são px. Com as frações do desktop nessa caixa
+     menor as três faixas ficavam encostadas nas bordas e afastadas entre si —
+     medido, 39% da sala era vazio nas pontas.
+
+     Comprimidas, a cena usa ~73% da caixa e as folgas entre as faixas ficam
+     parecidas (~55px). O desnível entre os dois grupos que ladeiam (0.04) é o
+     mesmo do desktop: é ele que tira a simetria de espelho. */
+  .lp-pbl-p[data-c="f"] { --gy-m: 0.17; }
+  .lp-pbl-p[data-c="0"] { --gy-m: 0.46; }
+  .lp-pbl-p[data-c="1"] { --gy-m: 0.50; }
+  .lp-pbl-p[data-c="2"] { --gy-m: 0.79; }
 }
 
 /* ── Fogueira (card "Built around PBL") ──────────────────────────────────────
@@ -1538,14 +1728,66 @@
   100% { transform: scaleY(1.16) scaleX(0.88) translateX(-1px); }
 }
 
-/* Mobile: desliga o sticky e o 100vh — empilhamento normal, sem cobrir. Os
-   painéis 100vh com o cap em coluna única ficariam altos demais e o efeito de
-   cobrir confunde no toque. */
+/* ── A sanfona TAMBÉM no telefone ────────────────────────────────────────────
+   Estava desligada aqui, com a justificativa de que o cap em coluna única
+   ficaria alto demais para uma tela. Medido, não é o caso: um capítulo
+   empilhado (texto + card 4/3) dá ~584px num 390x844, e o painel de passos
+   ~520px — ambos cabem com folga na tela do telefone. O que de fato não cabia
+   eram os painéis de CENA, e esses continuam com o tratamento próprio deles
+   (ver as exceções logo abaixo).
+
+   Então cada capítulo volta a grudar no topo e o seguinte sobe cobrindo, como
+   no desktop. Com isso três coisas que existiam só no desktop voltam a existir
+   no toque: o empilhar, o fade da emenda (a máscara de :not(:first-child), que
+   sem o grude era camada de composição sem efeito nenhum) e o recuo de
+   profundidade do GSAP (ver CapStack em Landing.tsx). */
 @media (max-width: 1000px) {
+  .lp-capstack-panel {
+    position: sticky;
+    top: 0;
+    min-height: 100svh;
+    padding-block: clamp(28px, 6vw, 48px);
+  }
+}
+
+/* ── Exceção: painel de cena que EMPILHA não pode grudar ─────────────────────
+   Um sticky mais alto que a tela com `top: 0` gruda e NÃO SOLTA — o que sobra
+   dele para baixo fica inalcançável. É o mecanismo que segura as cenas no
+   desktop (painel de 480vh, filho sticky de 100vh dentro), e é exatamente o que
+   não se pode fazer com um painel de altura AUTO cujo conteúdo passa de uma
+   tela: o texto que vem depois da cena nunca chegaria à viewport.
+
+   Onde cada cena está nessa situação:
+     · PBL no retrato — o painel empilha em fluxo e quem gruda é só o PALCO
+       (~2,3 telas de conteúdo no total);
+     · qualquer cena em janela baixa ou sob reduced-motion — as duas viram
+       altura auto com o filho estático.
+   Fora daí (PBL em tablet, marca em qualquer largura) o painel tem altura
+   explícita e filho sticky de uma tela: gruda igual ao desktop. */
+@media (max-width: 767px) and (min-height: 700px) {
+  .lp-pbl-panel {
+    position: static;
+  }
+}
+
+/* Janela baixa (e reduced-motion): NINGUÉM gruda, nem os capítulos comuns.
+   Aqui as duas cenas empilham em fluxo, e um painel grudado atrás de painéis
+   que rolam não cobre coisa alguma — ele só fica preso no topo virando FUNDO
+   PERMANENTE. E como cada painel tem o topo mascarado para dissolver a emenda,
+   esse fundo aparece: medido, a arte do computador do capítulo de LMS sangrava
+   atrás do título da cena de marca, dois capítulos depois.
+
+   A regra que o desktop cumpre sem esforço, porque lá todo painel gruda: atrás
+   da borda transparente de um painel está SEMPRE o painel imediatamente
+   anterior. Onde a pilha se mistura (uns grudam, outros rolam), ela deixa de
+   valer. Nesta faixa a sanfona não tinha o que segurar de qualquer modo — a
+   janela é baixa demais para uma cena de tela cheia —, então o certo é não
+   grudar nada. */
+@media (max-width: 1000px) and (max-height: 699px),
+       (max-width: 1000px) and (prefers-reduced-motion: reduce) {
   .lp-capstack-panel {
     position: static;
     min-height: 0;
-    padding-block: clamp(28px, 6vw, 48px);
   }
 }
 
@@ -2451,15 +2693,39 @@
   }
 }
 
+/* ── Barra em telas muito estreitas ──────────────────────────────────────────
+   O lockup completo ("PBLTools Video Rooms") mais o CTA não cabem numa barra
+   de 320px de conteúdo, e o CTA saía pela direita — invisível para um teste de
+   rolagem lateral, porque o `overflow-x: clip` do .lp corta em silêncio
+   (medido: +26px em 360). O wordmark forte basta aqui; "Video Rooms" continua
+   inteiro no hero e no rodapé, que têm largura para ele. */
+@media (max-width: 400px) {
+  .lp-nav {
+    gap: 12px;
+  }
+
+  .lp-nav .lp-logo-soft {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .lp-navlinks {
     display: none;
   }
 
   /* o rodapé carrega a navegação completa */
+
+  /* O herói ocupa a TELA CHEIA também no telefone. O `min-height: 0` que
+     estava aqui o encolhia para a altura do conteúdo, e a primeira dobra
+     entregava herói + começo da próxima seção ao mesmo tempo — em vez de uma
+     abertura inteira que dá lugar ao resto conforme se rola.
+
+     A medida vem do desktop e é `svh`, não `vh`: no telefone o `vh` conta a
+     área atrás da barra de endereço retrátil, e a dobra ficaria alta demais,
+     empurrando o CTA para fora até o usuário rolar. */
   .lp-hero {
-    min-height: 0;
-    padding-top: clamp(40px, 12vw, 80px);
+    padding-top: clamp(28px, 8vw, 60px);
   }
 
   .lp-hero-cta {
@@ -2491,6 +2757,132 @@
   .lp-foot-legal {
     flex-direction: column;
   }
+
+  /* Corpo do card de código. `2.7cqw` num card de ~320px caía no piso de
+     0.6rem — 9,6px, e isto não é enfeite: é o `curl` real que a seção inteira
+     existe para provar, e código que não se lê não prova nada.
+     O piso sobe para 0.72rem e o padding cede o que pode (7cqw eram ~22px de
+     cada lado num telefone). Sobra ~294px úteis em 360 e ~341 em 412, contra
+     os ~338 que a linha mais longa pede — cabe em 412 e rola alguns pixels nos
+     menores, que é o comportamento que o `overflow-x: auto` do <pre> já
+     previa. Rolar um pouco é melhor que não conseguir ler. */
+  .lp-code {
+    padding: 4cqw;
+    gap: 3cqw;
+    font-size: clamp(0.72rem, 3.1cqw, 0.95rem);
+  }
+
+  .lp-code-res {
+    padding-top: 3cqw;
+  }
+
+  /* 21vw dá ~360px de wordmark contra ~350 de largura útil num telefone de
+     390px: as pontas morriam no `overflow: clip` do rodapé, e wordmark cortado
+     lê como bug, não como sangria de propósito. */
+  .lp-wordmark {
+    font-size: 19.5vw;
+  }
+}
+
+/* ── Toque: o que era hover vira pressão ─────────────────────────────────────
+   Tudo aqui vive em `(hover: none)`, que é a pergunta certa — "este ponteiro
+   consegue pairar?" — e não uma largura. O desktop não atende a query e não vê
+   uma linha deste bloco; um telefone atende em qualquer orientação, e uma
+   janela de desktop estreita continua com o comportamento de desktop, que é o
+   correto porque lá ainda existe mouse.
+
+   O que isto resolve: a página comunica interação inteiramente por :hover — a
+   pílula levanta e ganha halo, os links mudam de cor, a faixa de marcas para.
+   No toque nada disso acontecia: apertar um botão não devolvia sinal nenhum.
+   É a diferença mais nítida entre "site aberto no celular" e "app". */
+@media (hover: none) {
+  /* Primeiro NEUTRALIZAR o hover. Em navegador móvel o :hover "cola" depois do
+     toque, e uma pílula que fica levantada e com halo depois de tocada lê como
+     travada. Vem antes do :active de propósito: as duas regras têm a mesma
+     especificidade e quem vier depois vence enquanto o dedo está em cima. */
+  .lp .lp-pill-solid:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Afunda, não levanta: o dedo está EM CIMA do alvo e não veria um
+     deslocamento de 1px para o mesmo lado. A escala se lê pela borda, que é a
+     parte do botão que sobra à vista. */
+  .lp .lp-pill-solid:active,
+  .lp .lp-pill-ghost:active {
+    transform: scale(0.97);
+  }
+
+  .lp .lp-pill-solid:active {
+    background: var(--solid-2);
+  }
+
+  .lp .lp-pill-ghost:active {
+    background: var(--bg-2);
+    border-color: var(--ink-2);
+  }
+
+  .lp-navlinks a:active,
+  .lp-foot-col a:active,
+  .lp-foot-legal a:active {
+    color: var(--ink);
+  }
+
+  .lp-q summary:active {
+    color: var(--ink-2);
+  }
+
+  /* A faixa de marcas para no hover para dar tempo de ler; no toque quem faz
+     isso é segurar o dedo nela. Mesma cortesia, gesto equivalente. */
+  .lp-marquee:active .lp-marquee-track {
+    animation-play-state: paused;
+  }
+
+  /* O realce cinza do WebKit sai: a página já responde com escala e cor, e o
+     retângulo padrão chega atrasado e por cima do efeito. */
+  .lp a,
+  .lp summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Alvos de 44px ─────────────────────────────────────────────────────────
+     As pílulas normais mediam ~42px (10px de padding sobre 0.94rem x 1.55) e os
+     links do rodapé ~23px com vão de 12 — passo de 35px, abaixo do que um
+     polegar acerta com confiança. E o rodapé não é detalhe no telefone: é a
+     ÚNICA navegação, já que .lp-navlinks some abaixo de 720px.
+
+     `min-height`, e não mais padding: padding mudaria o desenho da pílula (e o
+     .lp-pill-lg, que já passa de 44, engordaria à toa). O min-height só
+     garante a área tocável e não mexe em quem já cumpre. */
+  .lp .lp-pill-solid,
+  .lp .lp-pill-ghost {
+    min-height: 44px;
+  }
+
+  /* O lockup da nav é `<a href="/">` — alvo de navegação de verdade, e o único
+     jeito de voltar ao topo no telefone —, mas media 26px porque a altura dele
+     saía só do corpo do texto. Passou despercebido na auditoria e quem apontou
+     foi o teste: eu havia olhado as pílulas e os links do rodapé, não o logo.
+     Custa 1px na barra (o alvo mais alto passa a ser ele, não o CTA). */
+  .lp .lp-logo {
+    min-height: 44px;
+  }
+
+  .lp-foot-col {
+    gap: 2px;
+  }
+
+  .lp-foot-col a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .lp-foot-legal-links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
 
 /* ── prefers-reduced-motion: desliga tudo ────────────────────────────────────
@@ -2509,5 +2901,199 @@
   .lp [data-reveal] {
     opacity: 1;
     transform: none;
+  }
+}
+
+
+/* ── Range de scroll por faixa ───────────────────────────────────────────────
+   O comprimento cai conforme a tela: o range de desktop (380 e 480vh) num
+   tablet vira meia dúzia de telas por cena, e o polegar percorre isso muito
+   mais devagar que uma roda de mouse.
+
+   Como o ScrollTrigger usa `end: "bottom bottom"`, encurtar a ALTURA do painel
+   encurta o range junto — não há segundo número para manter em sincronia.
+
+   FICA NO FIM DA FOLHA de propósito: `height` aqui compete com o
+   `height: var(--pbl-scroll)` das regras base, que têm a MESMA especificidade
+   (0,1,0) — vence quem vem depois. Junto das cenas, o override valia para um
+   painel e não para o outro (medido: tablet de 768 seguia com 480vh). */
+@media (min-width: 768px) and (max-width: 1000px) and (min-height: 700px) {
+  .lp-pbl-panel {
+    height: 200vh;
+  }
+
+  .lp-skin-panel {
+    height: 175vh;
+  }
+
+  /* No tablet o stick de PBL continua sendo um sticky de UMA TELA (o painel tem
+     altura explícita), então o brilho de canto volta a caber nele — é só no
+     retrato, onde o stick empilha em ~2,3 telas, que ele precisou mudar de dono
+     e ir para o palco. */
+  .lp-pbl-stick::before {
+    display: block;
+  }
+}
+
+/* O brilho da cena de marca volta em toda a faixa de toque com altura: ali o
+   stick é sticky de 100svh nas duas larguras, e com a sanfona religada ele
+   volta a ser uma "página" que gruda — que é a condição para o brilho de canto
+   ler como foco sobre um card, e não como mancha solta. Fica de fora só a
+   janela baixa, onde o stick vira altura auto. */
+@media (max-width: 1000px) and (min-height: 700px) {
+  .lp-skin-stick::before {
+    display: block;
+  }
+}
+
+/* ── Retrato com trava: só o PALCO gruda ─────────────────────────────────────
+   Em coluna única a cena de PBL empilhada mede 1047–1152px contra 640–932 de
+   viewport: prender o painel inteiro cortaria conteúdo. Então quem gruda é o
+   palco, e o texto vem logo abaixo em fluxo, com gatilho próprio.
+
+   O `margin-bottom` É o range do lock — é ele que cria a rolagem durante a
+   qual o sticky segura. ESPELHADO em LOCK_RETRATO (Landing.tsx): mudar um sem
+   o outro faz a animação acabar antes ou depois de o palco soltar.
+
+   A cena de MARCA não precisa disto: ela cabe empilhada (785px), então gruda
+   inteira como no desktop — só com o range encurtado. */
+/* `no-preference` no seletor: sem ele, quem pede menos movimento ganhava a
+   geometria do lock (85vh de rolagem) sem animação nenhuma para justificá-la —
+   o JS não monta sob reduced-motion, mas o CSS montava o palco grudado assim
+   mesmo. É o descasamento JS/CSS de sempre. */
+@media (max-width: 767px) and (min-height: 700px) and (prefers-reduced-motion: no-preference) {
+  .lp-pbl-panel {
+    height: auto;
+    min-height: 0;
+  }
+
+  .lp-pbl-stick {
+    position: static;
+    height: auto;
+    min-height: 0;
+    /* Contexto de posicionamento para o cartão de abertura logo abaixo. */
+    position: relative;
+  }
+
+  /* ── O cartão de abertura, no retrato ──────────────────────────────────────
+     Sem ele o capítulo de PBL subia COBRINDO O ANTERIOR COM UMA TELA PRETA: o
+     palco só acende quando o gatilho dele cruza o topo, e até lá o painel é um
+     retângulo vazio. No desktop quem preenche essa travessia é este cartão; no
+     telefone ele não montava e sobrava o buraco (foi o relatado).
+
+     O `inset: 0` do desktop não serve aqui: lá o stick tem UMA TELA, aqui ele
+     empilha em ~2,5 — o cartão cobriria a coluna inteira, texto incluído.
+
+     STICKY, e não absoluto, e esta é a parte que custou uma tentativa: um
+     cartão absoluto no topo do stick só fica centrado na tela no instante EXATO
+     em que o painel acaba de cobrir. Antes disso ele sobe pela borda de baixo
+     (igual ao desktop, e tudo bem); depois, o palco gruda e o cartão vai embora
+     junto com o fluxo — dissolvendo fora do quadro. Sticky faz os dois pararem
+     no mesmo lugar durante a trava, que é onde o dissolve acontece.
+
+     `margin-bottom` negativo zera a contribuição de fluxo: o cartão passa a
+     ocupar o MESMO espaço do palco em vez de empurrá-lo uma tela para baixo.
+     Sem isso o capítulo ganharia uma tela inteira de rolagem vazia. */
+  .lp-pbl-stick > .lp-pbl-intro {
+    position: sticky;
+    inset: auto;
+    top: 0;
+    height: 100svh;
+    margin-bottom: -100svh;
+  }
+
+  .lp-pbl-stage {
+    position: sticky;
+    top: 0;
+    /* svh, não vh: no telefone o vh conta a área atrás da barra de endereço
+       retrátil, e o palco ficaria mais alto que a tela visível. */
+    height: 100svh;
+    display: grid;
+    place-items: center;
+    isolation: isolate;   /* contexto próprio para o brilho do ::before */
+    /* Esta margem é a ÚNICA fonte do range: o JS lê ela já resolvida em px
+       (ver gatilhoDaCena em Landing.tsx) em vez de repetir o número. Antes o
+       CSS dizia 85vh e o JS multiplicava window.innerHeight — no iOS são
+       grandezas diferentes (o vh conta a área atrás da barra de endereço, o
+       innerHeight não), e o desencontro ainda mudava conforme a barra recolhia.
+
+       ── Por que TETO EM PX, e não só svh ─────────────────────────────────────
+       Um sticky não gruda o quanto a margem pedir: ele para quando sua caixa de
+       margem alcança o fim do bloco que o contém. Aqui a PISTA disponível é o
+       que vem depois do palco dentro do stick — o vão do grid mais a coluna de
+       texto — e isso é um valor em px que ENCOLHE quando a tela alarga (texto
+       mais largo quebra em menos linhas), enquanto uma margem em svh CRESCE.
+       Medido, com 85svh: pista de 592px contra 680 de margem num 360x800, e
+       423 contra 765 num 767x900.
+
+       As duas consequências, e as duas foram relatadas:
+         · a sobra vira ESPAÇO MORTO entre a cena e o texto (300px medidos);
+         · pior, o JS mapeia a animação sobre a margem inteira, então o trecho
+           final da cena toca com o palco JÁ SAINDO — a batida do facilitador
+           cai em 81% da timeline e aparecia com a cena escapando por cima.
+
+       400px cabe na pista mais curta (423) com folga, em qualquer viewport
+       daqui. Ao mexer no conteúdo da coluna de texto, remedir: encurtar o texto
+       encurta a pista. */
+    margin-bottom: min(70svh, 400px);
+  }
+
+  /* O brilho de canto do capítulo, que no retrato tinha sumido junto com o
+     stick de tela cheia. Ele volta AQUI e não no stick porque no retrato quem
+     tem uma tela de altura é o palco — no stick, que mede ~2,3 telas, o mesmo
+     gradiente viraria um borrão quase todo fora do quadro. Sangra até a borda
+     pela margem negativa, como no desktop. */
+  .lp-pbl-stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    margin-inline: calc(50% - 50vw);
+    background: radial-gradient(65% 55% at 0% 0%, color-mix(in srgb, var(--focus) 13%, transparent), transparent 58%);
+    pointer-events: none;
+  }
+
+  /* O desenho ESTICA com o palco, como no desktop — onde .lp-pbl-stage tem
+     `align-self: stretch` e a sala fica com a altura da coluna (~756px).
+
+     Era 560px fixo, com a justificativa de que esticar "abriria demais o
+     arranjo". Não abre: as frações verticais crescem, mas os lugares DENTRO de
+     cada grupo são px e não mudam — o grupo continua do mesmo tamanho, só ganha
+     ar em volta, que é exatamente o que o desktop faz. O que o 560 fixo causava
+     era o oposto do pretendido: a cena ficava comprimida no miolo de uma tela
+     de 810, com o facilitador espremido contra a borda de cima e um vão morto
+     embaixo. As proporções agora são as mesmas nas duas telas.
+
+     Mas COM TETO. Esticar até a tela inteira num telefone alto espalha a cena:
+     as frações verticais crescem com a caixa enquanto os chips, os offsets de
+     grupo e o card seguem em px — medido num 390x844, sobravam 108px entre o
+     card e o grupo de baixo e 193px de vazio no topo. 560px é a altura em que
+     a composição fecha, e é a mesma que a faixa de janela baixa já usa: uma
+     medida só para toda a faixa de toque. O que sobra vira margem, porque o
+     palco centraliza (place-items). */
+  .lp-pbl-room {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: min(100%, 560px);
+    z-index: 1;   /* acima do brilho, que é irmão absoluto */
+  }
+
+  .lp-skin-panel {
+    height: 190vh;
+  }
+
+  /* Sem borda dissolvida NESTE painel: ele vem depois do de PBL, que no retrato
+     ROLA em vez de grudar. Quando a cena de marca chega ao topo, o painel de
+     PBL já saiu de cena e quem está atrás da borda transparente é o capítulo
+     de LMS — dois atrás, e ainda preso ali. A dissolução pressupõe que atrás
+     dela esteja o painel ANTERIOR; onde isso não vale, ela vira vazamento.
+     Ver a mesma correção na faixa de janela baixa, mais acima.
+
+     Não se perde quase nada: os dois painéis são `var(--bg)` chapado, então a
+     emenda dura entre eles é praticamente invisível. */
+  .lp-skin-panel:not(:first-child) {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }

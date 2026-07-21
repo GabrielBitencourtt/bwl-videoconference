@@ -315,7 +315,12 @@ function BootDevice() {
     const ctx = gsap.context(() => {
       const tl = gsap
         .timeline({
-          scrollTrigger: { trigger: el, start: "top 82%", once: true },
+          /* O gatilho é o PALCO, não o card. O card é bem mais alto que a arte
+             (é ele que carrega o padding e o glow), então o topo dele cruza a
+             linha de disparo com a arte ainda fora de tela — medido no
+             celular: a tela do monitor acendia com 0% do palco visível, e
+             quem rolava chegava com a animação encerrada. */
+          scrollTrigger: { trigger: el.querySelector(".lp-boot-stage")!, start: "top 85%", once: true },
           defaults: { ease: "power3.out" },
         })
         // 1) conector + cabo entram JUNTOS na tomada (o cabo acompanha o
@@ -397,11 +402,24 @@ function BootDevice() {
    em fração, um palco estreito faria os avatares (que têm tamanho fixo) se
    sobreporem justamente onde o agrupamento precisa ser legível. */
 const PBL_COLS = 4;
+const PBL_TOTAL = 12;
 
 /** Célula da grade inicial de webinar, row-major: uniforme e sem hierarquia,
     que é o ponto da imagem — ninguém em destaque, nem o facilitador. */
-function pblGridAt(i: number) {
-  return { x: 0.16 + (i % PBL_COLS) * 0.226, y: 0.22 + Math.floor(i / PBL_COLS) * 0.28 };
+function pblGridAt(i: number, colunas: number) {
+  const linhas = Math.ceil(PBL_TOTAL / colunas);
+  // Célula CENTRADA na sua divisão: a grade fica uniforme para qualquer número
+  // de colunas, sem constantes mágicas por breakpoint.
+  return { x: ((i % colunas) + 0.5) / colunas, y: (Math.floor(i / colunas) + 0.5) / linhas };
+}
+
+/** Quantas colunas cabem no palco. Num retrato de ~360px as quatro colunas do
+    desktop dariam 81px de passo para um chip de 92 — as colunas se sobrepunham
+    antes mesmo de a migração começar, e a "grade de webinar" abria como um
+    amontoado. Três colunas por quatro linhas cabem com folga e continuam
+    lendo como grade. */
+function pblColunas(largura: number) {
+  return largura < 480 ? 3 : PBL_COLS;
 }
 
 /* Os três grupos, dispostos EM VOLTA do card do problema, que fica no centro do
@@ -444,14 +462,14 @@ const PBL_FAC_AT = { x: 0.5, y: 0.25 };
 
 /** Destino de cada avatar, indexado pela posição na GRADE — que também é a
     ordem do DOM, para o leitor de tela e para o stagger baterem com o desenho. */
-const PBL_SEATS: { grid: { x: number; y: number }; to: { x: number; y: number }; off: [number, number]; fac: boolean }[] = (() => {
+const PBL_SEATS: { to: { x: number; y: number }; off: [number, number]; fac: boolean }[] = (() => {
   const out = new Array(PBL_COLS * 3);
   PBL_MEMBERS.forEach((ids, g) =>
     ids.forEach((id, k) => {
-      out[id] = { grid: pblGridAt(id), to: { x: PBL_CLUSTERS[g].cx, y: PBL_CLUSTERS[g].cy }, off: PBL_OFFSETS[g][k], fac: false };
+      out[id] = { to: { x: PBL_CLUSTERS[g].cx, y: PBL_CLUSTERS[g].cy }, off: PBL_OFFSETS[g][k], fac: false };
     }),
   );
-  out[PBL_FAC_I] = { grid: pblGridAt(PBL_FAC_I), to: PBL_FAC_AT, off: [0, 0] as [number, number], fac: true };
+  out[PBL_FAC_I] = { to: PBL_FAC_AT, off: [0, 0] as [number, number], fac: true };
   return out;
 })();
 
@@ -491,6 +509,80 @@ const PBL_READ: [string, string][] = [
    o que cria o scroll) e o range do ScrollTrigger — não há como os dois
    saírem de sincronia. */
 const PBL_SCROLL = "480vh";
+
+/* ── As três faixas de comportamento das cenas ───────────────────────────────
+   AMPLO    — largura para o arranjo em duas colunas E altura para a cena caber
+              em 100vh. O painel inteiro gruda e uma timeline só percorre tudo.
+   ESTREITO — retrato: há altura, mas em coluna única a cena empilhada não cabe
+              numa tela (medido: 1047–1152px de conteúdo contra 640–932 de
+              viewport). Então quem gruda é só o PALCO, e o texto vem depois em
+              fluxo, com gatilho próprio. Trava igual, sem comprimir conteúdo.
+   CURTO    — janela baixa demais para segurar 100vh de cena com sentido
+              (inclusive desktop redimensionado). Sem trava: cada bloco toca
+              uma vez ao entrar em campo.
+
+   ESTAS STRINGS TÊM DE CASAR com os @media de landing.css (procure por
+   "faixas de comportamento" lá). JS e CSS decidindo coisas diferentes sobre a
+   mesma tela já custou dois bugs nesta seção. */
+const MQ_AMPLO =
+  "(min-width: 768px) and (min-height: 700px) and (prefers-reduced-motion: no-preference)";
+const MQ_ESTREITO =
+  "(max-width: 767px) and (min-height: 700px) and (prefers-reduced-motion: no-preference)";
+const MQ_CURTO = "(max-height: 699px) and (prefers-reduced-motion: no-preference)";
+
+/* Fração de tela que o palco fica grudado no retrato — hoje só o FALLBACK de
+   quem não conseguir ler a margem resolvida (ver gatilhoDaCena).
+
+   Era um número espelhado no `margin-bottom` do .lp-pbl-stage, e espelhar era o
+   problema: o CSS dizia `85vh` e esta constante multiplicava `window.innerHeight`.
+   No iOS as duas grandezas não são a mesma coisa — o vh conta a área atrás da
+   barra de endereço retrátil e o innerHeight não —, então a cena acabava antes
+   ou depois de o palco soltar, e o desencontro AINDA mudava conforme a barra
+   recolhia. Agora o CSS é a única fonte e o JS lê a margem já em px. */
+const LOCK_RETRATO = 0.85;
+
+/** Config do ScrollTrigger conforme a faixa.
+    - AMPLO: o painel é o trigger; seu comprimento extra é o range.
+    - ESTREITO: o PALCO é o trigger e o range é a margem que o segura.
+    - CURTO: toca uma vez ao entrar, sem prender nada. */
+function gatilhoDaCena(painel: HTMLElement, palco: HTMLElement, faixa: "amplo" | "estreito" | "curto") {
+  if (faixa === "amplo") {
+    return { trigger: painel, start: "top top", end: "bottom bottom", scrub: 0.8, invalidateOnRefresh: true };
+  }
+  if (faixa === "estreito") {
+    return {
+      trigger: palco,
+      start: "top top",
+      /* O range É a margem que segura o palco, lida do CSS já resolvida em px.
+         Um número só, num lugar só: mexer no `margin-bottom` do .lp-pbl-stage
+         move a animação junto, e não há como os dois saírem de sincronia — que
+         é exatamente o que acontecia quando este valor era calculado aqui a
+         partir de window.innerHeight (ver LOCK_RETRATO). Função, não constante:
+         com invalidateOnRefresh o GSAP reavalia a cada refresh, então girar o
+         aparelho remede sozinho. */
+      end: () => "+=" + (parseFloat(getComputedStyle(palco).marginBottom) || window.innerHeight * LOCK_RETRATO),
+      scrub: 0.8,
+      invalidateOnRefresh: true,
+    };
+  }
+  return { trigger: palco, start: "top 72%", once: true };
+}
+
+/** Gatilho de um bloco que NÃO gruda: a própria SUBIDA dele pela tela é o
+    relógio. O range vai de "assomando na borda de baixo" até "assentado na
+    parte de cima", e o `scrub` mapeia isso no progresso.
+
+    Era `{ start: "top 78%", once: true }` — dispara e toca sozinho. Num bloco
+    que gruda isso funciona, porque a tela fica parada nele; aqui não: o gatilho
+    cai quando o bloco mal apareceu por baixo, a timeline corre em ~0,6s e
+    quando o texto chega em posição de leitura já acabou tudo. O relatado foi
+    "não tem as animações dos textos", e de fato não dava para ver nenhuma.
+
+    Com scrub as linhas caem CONFORME se rola, que é o que o desktop faz — lá
+    estas mesmas batidas vivem na timeline scrubbed da cena. */
+function gatilhoDeEntrada(alvo: HTMLElement) {
+  return { trigger: alvo, start: "top 88%", end: "top 26%", scrub: 0.8 };
+}
 
 /** Encadeia UM TWEEN POR ALVO, em vez de usar o `stagger` do GSAP.
 
@@ -546,7 +638,13 @@ function PblPanel({ c }: { c: (typeof CAPS)[number] }) {
        ligando reduced-motion no sistema). Fora da query nada monta — e o
        repouso do CSS já é o estado final. */
     const mm = gsap.matchMedia();
-    mm.add("(min-width: 1001px) and (prefers-reduced-motion: no-preference)", () => {
+    /* Três condições nomeadas: o GSAP entrega `conditions` e remonta a cena
+       sozinho ao cruzar um limiar (girar o aparelho, redimensionar a janela).
+       A COREOGRAFIA é a mesma nas três — muda quem toca o relógio e o que
+       fica preso. */
+    mm.add({ amplo: MQ_AMPLO, estreito: MQ_ESTREITO, curto: MQ_CURTO }, (ctx) => {
+      const faixa: "amplo" | "estreito" | "curto" =
+        ctx.conditions?.amplo ? "amplo" : ctx.conditions?.estreito ? "estreito" : "curto";
       const room = el.querySelector<HTMLElement>(".lp-pbl-room")!;
       // Medido na hora do tween, não fechado aqui: com invalidateOnRefresh o
       // GSAP reavalia estas funções a cada refresh, e o palco já mudou de
@@ -554,15 +652,20 @@ function PblPanel({ c }: { c: (typeof CAPS)[number] }) {
       const w = () => room.clientWidth;
       const h = () => room.clientHeight;
 
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: el,
-          start: "top top",        // o painel encosta no topo: a cena trava
-          end: "bottom bottom",    // ...e solta quando a altura extra acaba
-          scrub: 0.8,              // inércia atrás do scroll: quanto mais, mais deslizado
-          invalidateOnRefresh: true,
-        },
-        defaults: { ease: "none" },
+      /* Centro do avatar na posição de REPOUSO — a que o CSS dá, seja o arranjo
+         horizontal do desktop ou o vertical do mobile. É MEDIDO, e não deduzido
+         de PBL_SEATS, porque as duas coisas divergem: o repouso do mobile vem
+         de --gx-m/--gy-m (CSS) enquanto PBL_SEATS guarda as frações do desktop.
+         Somar um delta de desktop a um repouso de mobile dava um espalhamento
+         sem sentido — medido no celular: 11 colunas e 12 linhas distintas onde
+         devia haver 4x3, e 3 avatares fora do palco. Medindo, o deslocamento é
+         sempre "da célula da grade até onde você de fato está".
+
+         offsetLeft/offsetTop ignoram transform, então a leitura vale igual em
+         qualquer ponto da timeline — que é o que o invalidateOnRefresh pede. */
+      const centroEmRepouso = (chip: HTMLElement) => ({
+        x: chip.offsetLeft + chip.offsetWidth / 2,
+        y: chip.offsetTop + chip.offsetHeight / 2,
       });
 
       /* A cena ABRE como cartão de título: só o título, em corpo de display,
@@ -574,6 +677,16 @@ function PblPanel({ c }: { c: (typeof CAPS)[number] }) {
       const stage = el.querySelector<HTMLElement>(".lp-pbl-stage")!;
       const txt = el.querySelector<HTMLElement>(".lp-cap-txt")!;
       const intro = el.querySelector<HTMLElement>(".lp-pbl-intro")!;
+
+      const tl = gsap.timeline({
+        scrollTrigger: gatilhoDaCena(el, stage, faixa),
+        defaults: { ease: "none" },
+      });
+      /* Sem trava a timeline toca em tempo real, e as durações foram escritas
+         para serem consumidas por scroll — cerca de 5 unidades, que a 1x
+         viraria uma cena de 5 segundos. Acelerar em bloco preserva as
+         proporções entre as batidas. */
+      if (faixa === "curto") tl.timeScale(2.1);
 
       /* A cena NASCE centralizada e depois passa para a esquerda. É translação
          pura, não escala: para ocupar o centro bastaria mover o palco até o
@@ -595,86 +708,132 @@ function PblPanel({ c }: { c: (typeof CAPS)[number] }) {
          lugar à roda; (2) a cena, centralizada; (3) a cena passa para a
          esquerda; (4) o texto entra na direita e as habilidades surgem sob
          ele. */
-      tl.addLabel("intro", 0)
-        /* O título de abertura se dissolve, e é POR DENTRO do fade dele que a
-           roda começa a aparecer: o fade vai de 0.35 a 1.05 e os avatares
-           entram em 0.55, ainda com o título em tela. Sem essa sobreposição
-           haveria um vão de tela vazia entre o texto sumir e a sala surgir.
+      /* (1) O CARTÃO DE ABERTURA — em amplo e em estreito.
+         Era só amplo, e o custo disso não era perder um enfeite: o palco só
+         acende quando o gatilho dele cruza o topo, então no telefone o capítulo
+         subia cobrindo o anterior com UMA TELA PRETA. O cartão é o que ocupa
+         essa travessia, e sem ele havia um buraco (foi o relatado).
 
-           A escala sobe de leve junto (1 → 1.06): dissolver crescendo lê como
-           afastar-se, não como apagar. Longo e em `sine.inOut` pelo mesmo
-           motivo de sempre — curva mansa, transição e não corte. */
-        .fromTo(intro,
+         O que impedia era geometria, não coreografia: o cartão é `inset: 0` do
+         stick, e no retrato o stick empilha em ~2,5 telas — ele cobriria a
+         coluna inteira, texto incluído. Resolvido no CSS (ancorado no topo, uma
+         tela de altura, e STICKY como o palco, para os dois continuarem no
+         mesmo quadro durante a trava), a mesma coreografia vale nas duas.
+
+         Só o OFFSET muda, porque os dois relógios são diferentes: em amplo a
+         timeline cobre a cena inteira e o cartão sai em 0.35; em estreito ela é
+         só a trava do palco, que começa com os avatares — o cartão tem de
+         dissolver logo na abertura dela.
+
+         O título se dissolve e é POR DENTRO do fade dele que a roda aparece:
+         os avatares entram ainda com o título em tela. Sem essa sobreposição
+         haveria um vão de tela vazia entre o texto sumir e a sala surgir.
+         A escala sobe de leve junto (1 → 1.06): dissolver crescendo lê como
+         afastar-se, não como apagar. */
+      if (faixa !== "curto") {
+        tl.fromTo(intro,
           { autoAlpha: 1, scale: 1 },
-          { autoAlpha: 0, scale: 1.06, duration: 0.7, ease: "sine.inOut", immediateRender: true }, 0.35)
-        /* O texto da coluna fica escondido a cena inteira e só entra na batida
-           4. O `from` com immediateRender é o que o esconde já no progress 0 —
-           o repouso do CSS é visível, para o caso sem JS. */
-        .fromTo(txt,
-          { autoAlpha: 0 },
-          { autoAlpha: 1, duration: 0.7, ease: "sine.inOut", immediateRender: true }, 3.9)
-        // (3) A cena passa para a esquerda, abrindo a direita para o texto.
-        .fromTo(stage,
+          { autoAlpha: 0, scale: 1.06, duration: 0.7, ease: "sine.inOut", immediateRender: true },
+          faixa === "amplo" ? 0.35 : 0);
+      }
+
+      /* (3) A cena passa para a esquerda, abrindo a direita para o texto.
+         Esta segue só em amplo, e por motivo diferente: pressupõe duas colunas.
+         Em coluna única o palco já ocupa a largura toda e o deslize seria um
+         no-op de qualquer forma. */
+      if (faixa === "amplo") {
+        tl.fromTo(stage,
           { x: stageDx },
-          { x: 0, duration: 0.95, ease: "sine.inOut", immediateRender: true }, 3.3)
-        /* O problema materializa NO MEIO DA MIGRAÇÃO, não antes dela. Antes
-           colidia: a grade é uniforme e cobre o palco inteiro, então as duas
-           células centrais caem exatamente sobre o card, e ele nascia por baixo
-           de dois avatares. Entrando aqui, ele aparece no vão que a debandada
-           abre no centro — e os grupos ainda estão a caminho, então continuam
-           se organizando à volta dele, que é o que a cena tem de dizer. */
-        .from(".lp-pbl-problem", { autoAlpha: 0, scale: 0.86, duration: 0.5, ease: "power2.out" }, 2.35)
-        /* Facilitador: só DEPOIS dos grupos formados ele se distingue. Até aqui
-           ele viajou junto com os outros, igual a todos — o que muda agora é o
-           papel, não a chegada. */
-        .addLabel("fac", 2.9)
-        .from(".lp-pbl-fac-ring", { autoAlpha: 0, scale: 0.3, duration: 0.5, ease: "power2.out" }, "fac")
-        .from(".lp-pbl-fac-badge", { autoAlpha: 0, y: 8, duration: 0.4 }, "fac+=0.15")
-        .from(".lp-pbl-p-fac", { borderColor: "var(--line-2)", color: "var(--muted)", duration: 0.5 }, "fac")
-        // A leitura das habilidades, sob o texto que acabou de voltar.
-        .addLabel("read", 4.25)
-        .from(".lp-pbl-read-h", { autoAlpha: 0, y: 10, duration: 0.35 }, "read");
+          { x: 0, duration: 0.95, ease: "sine.inOut", immediateRender: true }, 3.3);
+      }
 
       const dots = gsap.utils.toArray<HTMLElement>(".lp-pbl-p", el);
+      const linhas = gsap.utils.toArray<HTMLElement>(".lp-pbl-line", el);
 
-      /* Os avatares NASCEM INVISÍVEIS e vão aparecendo com o scroll, um a um,
-         montando a grade de webinar — a sala enchendo antes de se reorganizar.
-         Só depois disso é que a migração começa.
+      /* A coreografia vive em DUAS funções, e as posições continuam sendo as
+         mesmas em qualquer faixa — o `base` só desloca o grupo para a origem
+         da timeline que o hospeda. É o que permite montar tudo numa linha só
+         (com trava) ou em duas independentes (sem trava) sem duplicar número
+         nenhum. */
 
-         A ordem é de FORA PARA DENTRO (linha de cima, linha de baixo, linha do
-         meio por último), e não a de leitura. Motivo: a linha central da grade
-         cai bem atrás do título de abertura, que ainda está dissolvendo aqui —
-         na ordem natural, um chip surgia colado na palavra "Built" e a
-         sobreposição lia como defeito. Deixando o miolo para o fim, a sala
-         enche em volta do título e o centro só é ocupado quando ele já saiu. */
-      const ordemEntrada = [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7].map((i) => dots[i]);
-      pblStagger(tl, ordemEntrada, () => ({ autoAlpha: 0, scale: 0.7 }),
-        { autoAlpha: 1, scale: 1, duration: 0.4, ease: "power2.out" }, 0.55, 0.045);
+      /* Batidas do PALCO: a sala enche, migra e se organiza em volta do
+         problema. A ordem de entrada é de FORA PARA DENTRO (linha de cima,
+         linha de baixo, miolo por último), e não a de leitura: a linha central
+         da grade cai atrás do cartão de abertura, que ainda dissolve aqui — na
+         ordem natural um chip surgia colado na palavra "Built". */
+      const beatsPalco = (t: gsap.core.Timeline, base: number) => {
+        const ordemEntrada = [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7].map((i) => dots[i]);
+        pblStagger(t, ordemEntrada, () => ({ autoAlpha: 0, scale: 0.7 }),
+          { autoAlpha: 1, scale: 1, duration: 0.4, ease: "power2.out" }, base + 0.55, 0.045);
+        /* Grade → grupos: o payload da cena. x/y (transform), nunca left/top —
+           left/top forçam layout a cada quadro e a migração engasgaria. */
+        pblStagger(t, dots,
+          (i) => ({
+            x: () => pblGridAt(i, pblColunas(w())).x * w() - centroEmRepouso(dots[i]).x,
+            y: () => pblGridAt(i, pblColunas(w())).y * h() - centroEmRepouso(dots[i]).y,
+          }),
+          { x: 0, y: 0, duration: 0.95, ease: "power2.inOut" }, base + 1.5, 0.03);
+        /* O problema materializa NO MEIO DA MIGRAÇÃO, não antes: a grade é
+           uniforme e cobre o palco, então as duas células centrais caem sobre o
+           card e ele nasceria por baixo de dois avatares. Aqui ele aparece no
+           vão que a debandada abre, com os grupos ainda a caminho. */
+        t.from(".lp-pbl-problem", { autoAlpha: 0, scale: 0.86, duration: 0.5, ease: "power2.out" }, base + 2.35)
+          /* Facilitador: só DEPOIS dos grupos formados ele se distingue. Até
+             aqui viajou junto com os outros — muda o papel, não a chegada. */
+          .from(".lp-pbl-fac-ring", { autoAlpha: 0, scale: 0.3, duration: 0.5, ease: "power2.out" }, base + 2.9)
+          .from(".lp-pbl-fac-badge", { autoAlpha: 0, y: 8, duration: 0.4 }, base + 3.05)
+          .from(".lp-pbl-p-fac", { borderColor: "var(--line-2)", color: "var(--muted)", duration: 0.5 }, base + 2.9);
+      };
 
-      /* Grade → grupos: o payload da cena. x/y (transform), nunca left/top —
-         left/top forçam layout a cada quadro e a migração engasgaria. */
-      pblStagger(
-        tl,
-        dots,
-        (i) => ({
-          x: () => (PBL_SEATS[i].grid.x - PBL_SEATS[i].to.x) * w() - PBL_SEATS[i].off[0],
-          y: () => (PBL_SEATS[i].grid.y - PBL_SEATS[i].to.y) * h() - PBL_SEATS[i].off[1],
-        }),
-        { x: 0, y: 0, duration: 0.95, ease: "power2.inOut" },
-        1.5,
-        0.03,
-      );
+      /* Batidas do TEXTO: a coluna entra, a leitura das habilidades cai linha a
+         linha e o remate fecha. */
+      const beatsTexto = (t: gsap.core.Timeline, base: number) => {
+        t.fromTo(txt,
+          { autoAlpha: 0 },
+          { autoAlpha: 1, duration: 0.7, ease: "sine.inOut", immediateRender: true }, base + 3.9)
+          .from(".lp-pbl-read-h", { autoAlpha: 0, y: 10, duration: 0.35 }, base + 4.25);
+        pblStagger(t, linhas, () => ({ autoAlpha: 0, y: 12 }),
+          { autoAlpha: 1, y: 0, duration: 0.4 }, base + 4.4, 0.11);
+        t.from(".lp-pbl-tag", { autoAlpha: 0, y: 10, duration: 0.45 }, base + 5.25);
+      };
 
-      pblStagger(
-        tl,
-        gsap.utils.toArray<HTMLElement>(".lp-pbl-line", el),
-        () => ({ autoAlpha: 0, y: 12 }),
-        { autoAlpha: 1, y: 0, duration: 0.4 },
-        4.4,
-        0.11,
-      );
+      if (faixa === "amplo") {
+        // Uma linha só: o scroll percorre a cena inteira como um filme.
+        beatsPalco(tl, 0);
+        beatsTexto(tl, 0);
+      } else {
+        /* Sem trava o painel EMPILHA e fica com ~1,4 tela de altura, então um
+           gatilho único no topo dele dispara tudo — inclusive as batidas do
+           texto, que estão lá embaixo e acabam de tocar fora da tela. Quem
+           rola encontra o texto e as habilidades já parados, e a cena parece
+           não ter animado (foi o relatado).
 
-      tl.from(".lp-pbl-tag", { autoAlpha: 0, y: 10, duration: 0.45 }, 5.25);
+           Cada bloco ganha então o SEU gatilho, disparando quando ele mesmo
+           entra em campo. É o "de um em um" ao longo da rolagem — mesma
+           coreografia, só que o relógio de cada parte é a chegada dela. */
+        beatsPalco(tl, -0.55);
+        /* Um respiro no FIM da timeline do palco. Sem ele o facilitador — que
+           é a última batida — só termina de se destacar no instante em que a
+           trava solta, e a cena escapa por cima antes de dar para ver que ela
+           ficou pronta.
+
+           A causa é estrutural, não de ajuste: aqui as batidas do TEXTO moram
+           noutra timeline (a coluna vem depois em fluxo, com gatilho próprio),
+           então a do palco acaba em ~2.9 e o facilitador cai em 100% dela. No
+           desktop a mesma batida cai em ~60%, porque lá a timeline continua com
+           o texto. Este tween sem alvo só ocupa tempo — com scrub, ocupar tempo
+           é ocupar rolagem —, e empurra o facilitador para ~78% do percurso.
+           Sobra uma pausa com a cena montada antes de ela sair. */
+        tl.to({}, { duration: 0.8 });
+        const tlTexto = gsap.timeline({
+          scrollTrigger: gatilhoDeEntrada(txt),
+          defaults: { ease: "none" },
+        });
+        /* Sem timeScale: com scrub quem dita o ritmo é o range do gatilho, não
+           o relógio. O 2.1 que estava aqui era para encurtar uma reprodução em
+           tempo real, e agora não há nenhuma. */
+        beatsTexto(tlTexto, -3.9);
+      }
 
       /* Toda a cena é medida (centro do cartão de abertura, destino de cada
          avatar), e medida cedo é medida errada. Um ResizeObserver reage ao que
@@ -874,7 +1033,9 @@ function SkinPanel({ c }: { c: (typeof CAPS)[number] }) {
     if (!el) return;
 
     const mm = gsap.matchMedia();
-    mm.add("(min-width: 1001px) and (prefers-reduced-motion: no-preference)", () => {
+    // Mesmas faixas do painel de PBL — ver MQ_AMPLO / MQ_ESTREITO / MQ_CURTO.
+    mm.add({ amplo: MQ_AMPLO, estreito: MQ_ESTREITO, curto: MQ_CURTO }, (ctx) => {
+      const trava = !!(ctx.conditions?.amplo || ctx.conditions?.estreito);
       const cena = el.querySelector<HTMLElement>(".lp-skin-scene")!;
       const hex = el.querySelector<HTMLElement>("[data-skin-hex]")!;
       /* LISTAS, não querySelector: o glifo e o nome aparecem DUAS vezes cada —
@@ -917,16 +1078,22 @@ function SkinPanel({ c }: { c: (typeof CAPS)[number] }) {
 
       const proxy = { p: 0 };
       const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: el,
-          start: "top top",
-          end: "bottom bottom",
-          scrub: 0.8,
-          invalidateOnRefresh: true,
-        },
+        /* Esta cena CABE numa tela mesmo empilhada (medido: 785px contra 844
+           de viewport), então no retrato ela pode grudar inteira, como no
+           desktop — não precisa do desmembramento do painel de PBL. Sem trava,
+           o gatilho é a CENA, senão o ciclo de marcas tocaria com ela ainda
+           fora de tela. */
+        scrollTrigger: trava
+          ? { trigger: el, start: "top top", end: "bottom bottom", scrub: 0.8, invalidateOnRefresh: true }
+          : gatilhoDeEntrada(cena),
         defaults: { ease: "none" },
         onUpdate: () => pintar(proxy.p),
       });
+      /* Sem trava o ciclo de marcas toca sozinho. Mais devagar que a cena de
+         PBL (1.5 contra 2.1) porque aqui cada parada existe para DAR TEMPO DE
+         LER o nome e o hex — acelerar demais transforma a prova da seção num
+         piscar de cores. */
+      if (!trava) tl.timeScale(1.5);
 
       /* O ciclo: segura a marca, atravessa para a próxima, segura de novo. As
          paradas são tweens sem alvo de valor (p já está lá) — existem só para
@@ -1102,38 +1269,72 @@ function CapContent({ c, flip }: { c: (typeof CAPS)[number]; flip: boolean }) {
     O GSAP entra só no POLIMENTO da transição: enquanto o próximo painel cobre,
     o conteúdo do de baixo RECUA (encolhe e esmaece), dando profundidade — a
     página coberta some para o fundo em vez de ser cortada seca. `scrub` liga o
-    recuo ao scroll com leve inércia (a suavidade pedida). Mobile e
-    prefers-reduced-motion não montam o GSAP: o empilhamento simples basta. */
+    recuo ao scroll com leve inércia (a suavidade pedida).
+
+    Roda TAMBÉM no telefone desde que a sanfona voltou a empilhar lá (ver
+    .lp-capstack-panel em landing.css). O que muda é a amplitude, e por medida:
+    numa tela de 390px o 0.93/0.35 do desktop afunda a página cedo demais — o
+    parágrafo que ainda está sendo lido já apagou antes de sair de vista, porque
+    a mesma fração de scroll cobre proporcionalmente muito mais tela. Menos
+    escala e menos fade entregam a mesma profundidade sem custar leitura.
+    prefers-reduced-motion segue não montando nada. */
 function CapStack({ items, children }: { items: (typeof CAPS)[number][]; children?: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const desktop = window.matchMedia("(min-width: 1001px)").matches;
-    if (reduce || !desktop) return;
-    const ctx = gsap.context(() => {
-      const panels = gsap.utils.toArray<HTMLElement>(".lp-capstack-panel");
-      panels.forEach((panel, i) => {
-        if (i === panels.length - 1) return; // o último não é coberto
-        // O painel de baixo recua enquanto o de cima cobre. `.lp-cap` nos caps,
-        // `.lp-panel-in` no painel extra (steps), `.lp-pbl-stick`/`.lp-skin-stick`
-        // nos de cena — o alvo comum é o conteúdo, e nas cenas ele é o filho
-        // sticky que segura o quadro.
-        gsap.to(panel.querySelector(".lp-cap, .lp-panel-in, .lp-pbl-stick, .lp-skin-stick"), {
-          scale: 0.93,
-          opacity: 0.35,
-          ease: "none",
-          scrollTrigger: {
-            trigger: panels[i + 1], // o painel que sobe cobrindo
-            start: "top bottom",    // começa a entrar por baixo
-            end: "top top",         // cobre por completo
-            scrub: 1,
-          },
+    /* matchMedia em vez do par de matchMedia() cru que estava aqui: com duas
+       faixas o GSAP remonta sozinho ao cruzar o limiar (girar o aparelho,
+       redimensionar), e reverte sozinho se o usuário ligar reduced-motion no
+       sistema. É o mesmo ciclo que os painéis de cena já usam. */
+    const mm = gsap.matchMedia();
+    mm.add(
+      {
+        amplo: "(min-width: 1001px) and (prefers-reduced-motion: no-preference)",
+        toque: "(max-width: 1000px) and (prefers-reduced-motion: no-preference)",
+      },
+      (ctx) => {
+        const grande = !!ctx.conditions?.amplo;
+        const panels = gsap.utils.toArray<HTMLElement>(".lp-capstack-panel", el);
+        panels.forEach((panel, i) => {
+          if (i === panels.length - 1) return; // o último não é coberto
+          // O painel de baixo recua enquanto o de cima cobre. `.lp-cap` nos caps,
+          // `.lp-panel-in` no painel extra (steps), `.lp-pbl-stick`/`.lp-skin-stick`
+          // nos de cena — o alvo comum é o conteúdo, e nas cenas ele é o filho
+          // sticky que segura o quadro.
+          const alvo = panel.querySelector<HTMLElement>(".lp-cap, .lp-panel-in, .lp-pbl-stick, .lp-skin-stick");
+          if (!alvo) return;
+          /* Só recua painel que de fato GRUDA. No retrato o de PBL empilha em
+             fluxo — a cena não cabe numa tela, então quem gruda é só o palco e
+             o stick mede ~2,3 telas. Escalar um bloco desses encolheria o texto
+             que a pessoa está lendo em vez de afundar uma página que já saiu.
+             E um painel que não gruda também não é COBERTO: não há transição
+             para polir.
+
+             Perguntar ao computed style, e não medir altura: a posição é
+             decidida pela cascata, que já está aplicada quando o efeito roda,
+             enquanto uma medida de altura depende de layout e fonte terem
+             assentado — e um `.lp-pbl-stick` medido antes do CSS aplicar daria
+             "alto demais" e mataria o recuo TAMBÉM no desktop, em silêncio.
+             É também a leitura exata: a exceção que solta esses painéis mora em
+             landing.css (procure por "painel de cena que EMPILHA"), e esta
+             linha lê a decisão de lá em vez de repeti-la em breakpoints. */
+          if (getComputedStyle(panel).position !== "sticky") return;
+          gsap.to(alvo, {
+            scale: grande ? 0.93 : 0.97,
+            opacity: grande ? 0.35 : 0.55,
+            ease: "none",
+            scrollTrigger: {
+              trigger: panels[i + 1], // o painel que sobe cobrindo
+              start: "top bottom",    // começa a entrar por baixo
+              end: "top top",         // cobre por completo
+              scrub: 1,
+            },
+          });
         });
-      });
-    }, el);
-    return () => ctx.revert();
+      },
+    );
+    return () => mm.revert();
   }, []);
   return (
     <div className="lp-capstack" ref={ref}>
