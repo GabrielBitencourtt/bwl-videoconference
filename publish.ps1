@@ -20,7 +20,12 @@ param(
     [switch]$NoGit
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue', nao 'Stop': git, ssh, scp e docker escrevem informacao NORMAL no stderr
+# (avisos de CRLF, progresso do push, log do build). Com 'Stop' o PowerShell 5.1
+# transforma cada uma dessas linhas em erro terminante e o script morre no meio de um
+# passo que deu certo -- foi o que abortava a publicacao logo apos o push. Quem decide
+# se um comando falhou e o $LASTEXITCODE, checado apos cada chamada.
+$ErrorActionPreference = 'Continue'
 Set-Location -Path $PSScriptRoot
 
 $Remote = 'ubuntu@18.230.96.137'
