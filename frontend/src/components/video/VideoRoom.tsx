@@ -1789,7 +1789,10 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
         </div>
       )}
       {!!intro?.length && <RoteiroIntro blocos={intro} />}
-      <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}>
+      {/* --vr-qn: quantos cards a etapa terá. O CSS usa para dividir a altura
+          disponível e escolher o tamanho de fonte que ainda cabe. */}
+      <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}
+        data-qn={tot} style={{ ["--vr-qn" as any]: String(tot) }}>
         {items.map((q, i) => (
           <div className="vr-pbl-qcard" key={i} data-latest={emphasize && i === count - 1 ? "1" : undefined}>
             <span className="vr-pbl-qcard-num">{i + 1}</span>
