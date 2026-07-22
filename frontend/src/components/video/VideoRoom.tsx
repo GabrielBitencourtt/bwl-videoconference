@@ -1160,8 +1160,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               <span className="vr-seq-label" title={seqLabel}>
                 {stageBusy ? "…" : seqLabel}
               </span>
-              <button className="vr-seq-go" onClick={runStep} disabled={stageBusy}
-                title={pblStage === "done" ? "Encerrar a sala" : "Executar a etapa e avançar"}>
+              {/* Tooltip = a MESMA ação anunciada no rótulo: o texto genérico de antes
+                  não dizia o que o clique ia disparar. */}
+              <button className="vr-seq-go" onClick={runStep} disabled={stageBusy} title={seqLabel}>
                 {I.playTri}
               </button>
             </div>
