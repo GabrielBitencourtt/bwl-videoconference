@@ -112,11 +112,19 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
   // que o swap seja confundido com o usuário saindo de verdade.
   const swapRef = useRef(false);
 
+  // Contador de entradas: entra na `key` do <LiveKitRoom> para que CADA entrada em
+  // grupo crie uma conexão nova. Sem ele, reentrar no MESMO grupo (caso de quem cai
+  // e volta) mantinha a chave igual — o React não remontava e o token novo era
+  // ignorado, deixando a pessoa presa numa sessão morta: dentro do grupo, sem ver
+  // nem falar com ninguém.
+  const [boSeq, setBoSeq] = useState(0);
+
   const enterBreakout = useCallback(async (group: { id: string; name: string }, endsAt: string | null) => {
     if (!identity) return;
     try {
       const t = await sdk.breakouts.token(roomId, group.id, identity, displayName);
       swapRef.current = true;
+      setBoSeq((n) => n + 1);
       setBreakout({ token: t.token, url: t.livekit_url, groupId: group.id, groupName: t.group_name, endsAt });
       setBoChoices(null);
     } catch (e) { console.error("breakout token", e); }
@@ -230,7 +238,7 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
   return (
     <>
       <LiveKitRoom
-        key={breakout?.groupId ?? "main"}
+        key={breakout ? `${breakout.groupId}:${boSeq}` : "main"}
         serverUrl={breakout?.url ?? livekitUrl}
         token={breakout?.token ?? token}
         connect
