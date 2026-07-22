@@ -727,11 +727,16 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   //  - plenária (question): as QUESTÕES, reveladas uma a uma;
   //  - Análise situacional (situational): cascata dos RISCOS a avaliar;
   //  - a partir de "Liberar análise de riscos" (release_risks): GRÁFICO p/ host/moderador;
-  //  - "Mostrar gráfico" (show_chart) em diante: GRÁFICO também para os alunos.
+  //  - "Mostrar gráfico" (show_chart) em diante: GRÁFICO também para os alunos;
+  //  - "Liberar feedback de interação" (release_feedback): tela SÓ do Feedback da
+  //    interação — o gráfico sai, porque a atividade agora é outra.
   const showQuestionsArea = pblStage === "question";
   const showDimensions = pblStage === "situational";
-  const chartForStaff = stepIndex(pblStage) >= stepIndex("release_risks");
-  const chartForStudents = stepIndex(pblStage) >= stepIndex("show_chart");
+  // Feedback da interação: última seção do roteiro. Tem tela própria, senão o gráfico
+  // (que vale de release_risks em diante) cobriria a etapa e o texto nunca apareceria.
+  const showFeedback = pblStage === "release_feedback" || pblStage === "done";
+  const chartForStaff = !showFeedback && stepIndex(pblStage) >= stepIndex("release_risks");
+  const chartForStudents = !showFeedback && stepIndex(pblStage) >= stepIndex("show_chart");
   const chartAvailable = chartForStaff;   // toggle do gráfico (host/moderador)
 
   const [chartHidden, setChartHidden] = useState(false);
@@ -1132,7 +1137,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                      label="Questão para reflexão" icon="💭" progress emphasize />
+                      label="Questão para reflexão" icon="💭" progress emphasize
+                      intro={rIntroQuestoes(roteiro)} />
                   ) : (
                     <div className="vr-pbl-question">
                       <div className="vr-pbl-question-waiting">
@@ -1161,7 +1167,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               plenaryQ?.list?.length ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                    label="Questão para reflexão" icon="💭" progress emphasize />
+                    label="Questão para reflexão" icon="💭" progress emphasize
+                    intro={rIntroQuestoes(roteiro)} />
                 </div>
               ) : null
             ) : chartForStaff ? (
@@ -1356,6 +1363,19 @@ function rBlocos(r: RoteiroSnapshot | null, key: string): RoteiroBlocoFixo[] {
   return r?.secoes?.find((s) => s.key === key)?.blocosFixos ?? [];
 }
 
+/** Título de uma seção — vem do snapshot (`schema.ts` é a fonte única), não do código. */
+function rTitulo(r: RoteiroSnapshot | null, key: string): string {
+  return r?.secoes?.find((s) => s.key === key)?.titulo ?? "";
+}
+
+/** Introdução às questões da plenária: no roteiro, o bloco que explica a DINÂMICA das
+ *  questões ("Cada questão deverá ser dirigida à um participante…") vem depois do bloco
+ *  de objetivo da seção. É esse texto que abre a etapa das questões — as questões em si
+ *  não mudam. Salas sem roteiro (ou com um único bloco) simplesmente não têm intro. */
+function rIntroQuestoes(r: RoteiroSnapshot | null): RoteiroBlocoFixo[] {
+  return rBlocos(r, "plenaria").slice(1);
+}
+
 /** Blocos de texto fixo de uma seção — o "corpo" da tela de cada etapa. */
 function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
   return (
@@ -1373,6 +1393,22 @@ function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
         </div>
       ))}
     </>
+  );
+}
+
+/** Intro curta acima de uma cascata (questões da plenária). Mesmo texto do roteiro,
+ *  em peso menor: quem manda na tela é a questão, a intro só situa a dinâmica. */
+function RoteiroIntro({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
+  if (!blocos.length) return null;
+  return (
+    <div className="vr-pbl-intro">
+      {blocos.map((b, i) => (
+        <div key={i}>
+          {b.titulo && <strong>{b.titulo}</strong>}
+          {b.paragrafos.map((t, k) => <p key={k}>{t}</p>)}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1407,13 +1443,25 @@ function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: Roteir
     );
   }
 
+  // Feedback da interação: tela PRÓPRIA da etapa (o gráfico sai de cena aqui). Leva o
+  // título da seção porque é a única atividade em tela — sem ele o texto fica solto.
+  if (stage === "release_feedback" || stage === "done") {
+    const titulo = rTitulo(roteiro, "feedback");
+    return (
+      <div className="vr-rot vr-rot-feedback">
+        {titulo && <div className="vr-rot-secao-tit">{titulo}</div>}
+        <RoteiroBlocos blocos={rBlocos(roteiro, "feedback")} />
+      </div>
+    );
+  }
+
   // Demais etapas: seção do roteiro correspondente.
   const secao = stage === "registration_open" || stage === "registration_close" ? "abertura"
     : stage === "synopsis" ? "revisitando"
       : stage === "groups" ? "aquecimento"
         : stage === "plenary" ? "plenaria"
           : stage === "release_risks" ? "analise"
-            : "feedback";   // closing / release_feedback / done
+            : "feedback";   // closing (o gráfico costuma cobrir esta etapa)
   const blocos = rBlocos(roteiro, secao);
 
   // Conteúdo variável por etapa.
@@ -1452,8 +1500,11 @@ const STEPS: StepDef[] = [
   { id: "registration_close", action: "Encerrar o registro",                  head: "Registro de Presença" },
   { id: "synopsis",           action: "Revisitar a situação-problema",        head: "Situação-problema" },
   { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
-  { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
-  { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
+  // `head` = nome da seção do roteiro que está NA TELA (docx "VIDEOCONFERÊNCIA
+  // INTEGRADA"). Em plenary/question a tela mostra a seção "Discussão em Plenária" —
+  // antes o rótulo dizia "Aquecimento"/"Plenária" e não batia com o texto exibido.
+  { id: "plenary",            action: "Discussão em plenária",                head: "Discussão em Plenária" },
+  { id: "question",           action: "Questão para reflexão",                head: "Discussão em Plenária" },
   { id: "situational",        action: "Análise situacional",                  head: "Análise situacional" },
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
   { id: "show_chart",         action: "Mostrar gráfico",                      head: "Análise situacional" },
@@ -1511,7 +1562,11 @@ function ActivityBar({ stage, head }: { stage: OpenPblStage; head: string }) {
   );
 }
 
-const RISK_COLORS = ["#13c2c2", "#1890ff", "#2f54eb", "#722ed1", "#a0d911", "#52c41a", "#f4664a", "#faad14"];
+/* Séries do radar. Paleta categórica escolhida PARA O FUNDO ESCURO da sala: a antiga
+ * (Ant Design, feita para fundo branco) reprovava em contraste e em separação para
+ * daltonismo sobre `--vr-bg`. Ordem fixa — a cor segue a série, não a posição, então
+ * filtrar pela legenda não repinta as que sobraram. */
+const RISK_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
 
 /** Quebra um rótulo em até 2 linhas (por palavra), elipsando o excedente. */
 function wrapText(text: string, max: number): string[] {
@@ -1592,7 +1647,7 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
  *  MESMO componente (o aluno recebe a lista por dados), então a UI/animação fica num
  *  só lugar. `progress` mostra os passos (●) no cabeçalho e `emphasize` realça o card
  *  mais recente — ambos fazem sentido só na revelação progressiva (plenária). */
-function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false }: {
+function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false, intro }: {
   items: string[];
   total?: number;
   label?: string;
@@ -1601,6 +1656,9 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   emphasize?: boolean;
   /** Renderiza no fluxo (dentro de uma tela do roteiro) em vez de cobrir a area. */
   inline?: boolean;
+  /** Texto do roteiro que ABRE a etapa, acima da cascata (a plenária usa a dinâmica
+   *  das questões). Slot opcional — as questões em si não mudam. */
+  intro?: RoteiroBlocoFixo[];
 }) {
   const count = items.length;
   const tot = Math.max(total ?? count, count, 1);
@@ -1620,6 +1678,7 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
           )}
         </div>
       )}
+      {!!intro?.length && <RoteiroIntro blocos={intro} />}
       <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}>
         {items.map((q, i) => (
           <div className="vr-pbl-qcard" key={i} data-latest={emphasize && i === count - 1 ? "1" : undefined}>
@@ -1750,7 +1809,9 @@ function RadarSvg({ dims, series, max, answered, total, canFilter = false, hidde
         {/* vértice destacado na dimensão sob o mouse */}
         {hover !== null && vis.map((s, si) => {
           const [px, py] = point(hover, s.values[hover] ?? 0);
-          return <circle key={`pt${si}`} cx={px} cy={py} r={3.5} fill={s.color} stroke="#fff" strokeWidth={1} />;
+          // O anel do vértice é a cor do FUNDO (classe → var CSS): separa marcadores
+          // sobrepostos de séries diferentes. Fixo em branco, ele brilhava no escuro.
+          return <circle key={`pt${si}`} className="vr-radar-pt" cx={px} cy={py} r={4} fill={s.color} />;
         })}
         {/* áreas invisíveis por dimensão (hover) — o aluno também explora o gráfico */}
         {dims.map((_, i) => {
