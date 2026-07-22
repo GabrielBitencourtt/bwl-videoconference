@@ -148,16 +148,22 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
     });
   }, [roomId, identity, isStaff, enterBreakout, leaveBreakout]);
 
-  // Entrou numa sala com grupos JÁ abertos → vai direto para o seu grupo.
-  useEffect(() => {
+  // Volta para o grupo ao qual a pessoa está atribuída (a atribuição é persistida e o
+  // identity do convidado é estável por e-mail). Usado ao entrar na sala E ao reentrar
+  // depois de cair — neste segundo caso o grupo era simplesmente descartado.
+  const rejoinMyGroup = useCallback(async () => {
     if (!identity || isStaff) return;
-    sdk.breakouts.state(roomId).then((st) => {
-      if (!st.open) return;
+    try {
+      const st = await sdk.breakouts.state(roomId);
+      if (!st.open) { setBreakout(null); return; }   // grupos encerraram enquanto esteve fora
       const mine = st.groups.find((g) => g.members.some((m) => m.identity === identity));
-      if (mine) enterBreakout(mine, st.ends_at);
+      if (mine) await enterBreakout(mine, st.ends_at);   // token novo, não o antigo
       else if (st.mode === "self") setBoChoices(st.groups);
-    }).catch(() => {});
-  }, [identity, isStaff, roomId]);
+    } catch { /* sem estado de grupos: segue na sala principal */ }
+  }, [identity, isStaff, roomId, enterBreakout]);
+
+  // Entrou numa sala com grupos JÁ abertos → vai direto para o seu grupo.
+  useEffect(() => { rejoinMyGroup(); }, [rejoinMyGroup]);
 
   // Auto-some o aviso após alguns segundos.
   useEffect(() => {
@@ -189,7 +195,8 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
           <div>Você saiu da sala.</div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button className="vr-join-btn" style={{ minWidth: 180 }} onClick={() => { setBreakout(null); setLeft(false); }}>Entrar novamente</button>
+            <button className="vr-join-btn" style={{ minWidth: 180 }}
+              onClick={async () => { await rejoinMyGroup(); setLeft(false); }}>Entrar novamente</button>
             {onLeft && <button className="vr-join-btn" style={{ minWidth: 140, background: "transparent", border: "1px solid var(--vr-border)" }} onClick={() => onLeft()}>Voltar ao início</button>}
           </div>
         </div>
