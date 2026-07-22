@@ -876,7 +876,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const revealItems = pblStage === "synopsis" ? roteiroSinopse
     : pblStage === "groups" ? roteiroOrientadoras
       : pblStage === "question" ? roteiroQuestions
-        : [];
+        : pblStage === "situational" ? situationalItems
+          : [];
   // Quem conduz usa o próprio contador; os demais seguem o que ele transmite.
   const shownCount = amController
     ? reveal + 1
@@ -1024,6 +1025,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           break;
         }
         case "situational":
+          // Os riscos aparecem um a um; só depois do último libera o questionário.
+          if (reveal + 1 < situationalItems.length) { setReveal(reveal + 1); break; }
           await goToStep(next);
           break;
         case "release_risks":
@@ -1179,7 +1182,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 ) : null
               ) : showDimensions ? (
                 // Análise situacional: cascata dos RISCOS a avaliar (roteiro do episódio).
-                <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+                <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} shown={shownCount} /></div>
               ) : showQuestionsArea ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
@@ -1207,7 +1210,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               </div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata dos riscos.
-              <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} shown={shownCount} /></div>
             ) : showQuestionsArea ? (
               // Aluno na plenária: as questões reveladas chegam por dados (o facilitador
               // comanda o ritmo), e a cascata é a mesma.
@@ -1749,7 +1752,11 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
  *  episódio; em salas antigas, das dimensões escolhidas na criação — e, na falta das
  *  duas, do /risk-chart. Usa o MESMO componente/CSS/animação das questões da
  *  plenária (QuestionCascade com progress + emphasize). */
-function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
+function RiskDimensions({ roomId, dims: roomDims, shown = 1 }: {
+  roomId: string; dims?: string[];
+  /** Quantos riscos já foram revelados pelo facilitador. */
+  shown?: number;
+}) {
   const sdk = useSDK();
   const [fetched, setFetched] = useState<string[]>([]);
   const hasRoomDims = !!(roomDims && roomDims.length);
@@ -1768,7 +1775,8 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   return dims.length ? (
     // Mesma animação/CSS das questões da plenária: mesmo componente e mesmas flags
     // (progress + emphasize) → cards idênticos, com dots e realce do último.
-    <QuestionCascade items={dims} total={dims.length} label="Principais riscos" progress emphasize />
+    <QuestionCascade items={dims.slice(0, shown)} total={dims.length}
+      label="Principais riscos" progress emphasize />
   ) : (
     <div className="vr-pbl-question">
       <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
