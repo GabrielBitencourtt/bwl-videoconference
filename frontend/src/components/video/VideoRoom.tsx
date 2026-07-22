@@ -901,12 +901,23 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     : (pblStage === "groups" && breakoutOpen) ? revealItems.length
       : (remoteReveal?.stage === pblStage ? remoteReveal.count : 1);
 
-  // Rótulo do botão sequencial (▶) — na plenária mostra a contagem de questões.
+  // Rótulo do botão sequencial (▶): SEMPRE o que o próximo clique vai fazer.
+  //
+  // Nas etapas em cascata isso muda ao longo da etapa. Enquanto há card a revelar, o
+  // clique revela — o rótulo é a ação da etapa com o contador. Revelados todos, o
+  // clique já executa a etapa SEGUINTE, e antes o botão continuava anunciando a
+  // etapa atual (ex.: "Análise situacional (5/5)" quando o clique liberava o
+  // questionário de riscos).
+  const faltaRevelar = revealItems.length > 1 && reveal + 1 < revealItems.length;
+  const proxima = STEPS[Math.min(stepIndex(pblStage) + 1, STEPS.length - 1)];
   const seqLabel = pblStage === "groups" && breakoutOpen
     ? "Encerrar os grupos"
-    : revealItems.length > 1
-    ? `${curStep.action} (${Math.min(reveal + 1, revealItems.length)}/${revealItems.length})`
-    : curStep.action;
+    : faltaRevelar
+      ? `${curStep.action} (${reveal + 1}/${revealItems.length})`
+      // "groups" é a exceção: terminada a revelação, o clique ainda executa a AÇÃO da
+      // própria etapa (abrir as salas) em vez de avançar.
+      : (revealItems.length > 1 && pblStage !== "groups") ? proxima.action
+        : curStep.action;
 
   // Class-code só é liberado (mostrado ao facilitador) DEPOIS de clicar em "Iniciar o
   // registro" — ou seja, a partir da etapa de "Encerrar o registro" (registro aberto).
