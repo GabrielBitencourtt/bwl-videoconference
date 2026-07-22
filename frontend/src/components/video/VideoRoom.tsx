@@ -745,6 +745,20 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [chartFilter, setChartFilter] = useState<string[]>([]);
   const toggleChartSeries = (name: string) =>
     setChartFilter((f) => (f.includes(name) ? f.filter((x) => x !== name) : [...f, name]));
+  // Séries existentes no gráfico (reportadas por ele) — necessárias para começar a
+  // etapa "Mostrar gráfico" com TUDO oculto.
+  const [chartSeries, setChartSeries] = useState<string[]>([]);
+  // Ao entrar em "Mostrar gráfico" o radar aparece zerado para os alunos: o
+  // facilitador vai habilitando série por série na legenda. Roda uma vez por
+  // entrada na etapa — sem a trava, cada série nova recarregada esconderia o que
+  // ele acabou de mostrar.
+  const zeradoRef = useRef(false);
+  useEffect(() => {
+    if (pblStage !== "show_chart") { zeradoRef.current = false; return; }
+    if (zeradoRef.current || !chartSeries.length) return;
+    zeradoRef.current = true;
+    setChartFilter(chartSeries);
+  }, [pblStage, chartSeries]);
   const [stageBusy, setStageBusy] = useState(false);
   // Cards já revelados na etapa atual. Vale para toda cascata que aparece um a um
   // (sinopse, questões orientadoras e questões da plenária).
@@ -1178,7 +1192,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 !chartHidden ? (
                   <div className="vr-pbl-present-big">
                     <RiskChart roomId={roomId} canFilter showPending
-                      hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries} />
+                      hiddenSeries={chartFilter} onToggleSeries={toggleChartSeries}
+                      onSeries={setChartSeries} />
                   </div>
                 ) : null
               ) : showDimensions ? (
@@ -1642,7 +1657,7 @@ function wrapText(text: string, max: number): string[] {
 
 /** Gráfico do Questionário de Riscos — radar agregado por grupo, atualizando a
  *  cada 5s (mesmo dado do gráfico do chat do pacote). */
-function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSeries = [], onToggleSeries }: {
+function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSeries = [], onToggleSeries, onSeries }: {
   roomId: string;
   /** Quem controla a sessão filtra pela legenda; o aluno só segue o filtro (mas explora o gráfico). */
   canFilter?: boolean;
@@ -1650,6 +1665,8 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
   showPending?: boolean;
   /** Filtro da legenda — sincronizado: o do facilitador replica no gráfico do aluno. */
   hiddenSeries?: string[]; onToggleSeries?: (name: string) => void;
+  /** Nomes das séries disponíveis — a sala precisa deles para começar tudo oculto. */
+  onSeries?: (names: string[]) => void;
 }) {
   const sdk = useSDK();
   const [chart, setChart] = useState<any | null>(null);
@@ -1669,18 +1686,28 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
     return () => { alive = false; clearInterval(iv); };
   }, [roomId]);
 
+  // Séries montadas ANTES dos early-returns: os nomes são publicados por efeito
+  // (`onSeries`) e hook não pode ficar depois de um return condicional.
+  const series = useMemo(() => {
+    const out: { name: string; color: string; values: number[] }[] = [];
+    if (!chart) return out;
+    if (Array.isArray(chart.baseGrades) && chart.baseGrades.length) out.push({ name: "Base do Curador", color: RISK_COLORS[0], values: chart.baseGrades });
+    if (Array.isArray(chart.classAverage) && chart.classAverage.length) out.push({ name: "Média da Turma", color: RISK_COLORS[1], values: chart.classAverage });
+    (chart.groups || []).forEach((g: any, i: number) => {
+      out.push({ name: g.name || `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
+    });
+    return out;
+  }, [chart]);
+
+  const serieNames = series.map((x) => x.name).join("|");
+  useEffect(() => { onSeries?.(serieNames ? serieNames.split("|") : []); }, [serieNames]);
+
   if (status === "nodim")
     return <div className="vr-chart-msg">Selecione o <b>conjunto de dimensões</b> na criação da sala para exibir o gráfico de riscos.</div>;
   if (!chart)
     return <div className="vr-chart-msg">{status === "loading" ? "Carregando gráfico…" : "Aguardando as respostas dos alunos…"}</div>;
 
   const dims: string[] = chart.dimensions || [];
-  const series: { name: string; color: string; values: number[] }[] = [];
-  if (Array.isArray(chart.baseGrades) && chart.baseGrades.length) series.push({ name: "Base do Curador", color: RISK_COLORS[0], values: chart.baseGrades });
-  if (Array.isArray(chart.classAverage) && chart.classAverage.length) series.push({ name: "Média da Turma", color: RISK_COLORS[1], values: chart.classAverage });
-  (chart.groups || []).forEach((g: any, i: number) => {
-    series.push({ name: g.name || `Grupo ${i + 1}`, color: RISK_COLORS[(i + 2) % RISK_COLORS.length], values: g.grades || [] });
-  });
 
   const total = chart.total || 0;
   const completed = chart.completed || 0;          // respondeu TODAS as dimensões
