@@ -749,6 +749,13 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const roteiroQuestions = useMemo(() => rLista(roteiro, "questoesPlenaria"), [roteiro]);
   // Riscos a avaliar na Análise situacional. Vêm do roteiro; salas antigas (sem roteiro)
   // ainda caem nas dimensões do conjunto escolhido na criação.
+  // Banner de fundo da apresentacao (roteiro do episodio). Chega ja como URL assinada:
+  // o que fica guardado e a chave do S3, e o /public assina a cada carga da sala.
+  const bannerFundo = rTexto(roteiro, "bannerFundo");
+  const bannerProps = bannerFundo
+    ? { "data-banner": "1", style: { ["--vr-banner" as any]: `url("${bannerFundo}")` } as React.CSSProperties }
+    : {};
+
   const situationalItems = useMemo(() => {
     const riscos = rLista(roteiro, "riscos");
     return riscos.length ? riscos : roomDimensions;
@@ -1120,9 +1127,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 ) : null
               ) : showDimensions ? (
                 // Análise situacional: cascata dos RISCOS a avaliar (roteiro do episódio).
-                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+                <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
               ) : showQuestionsArea ? (
-                <div className="vr-pbl-present-big">
+                <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
                       label="Questão para reflexão" icon="💭" progress emphasize />
@@ -1137,7 +1144,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 </div>
               ) : (
                 // Demais etapas: a tela do roteiro correspondente.
-                <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+                <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
               )
             ) : chartForStudents ? (
               // "Mostrar gráfico" em diante: o aluno também vê o gráfico — segue o filtro
@@ -1147,12 +1154,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               </div>
             ) : showDimensions ? (
               // Análise situacional: aluno vê a MESMA cascata dos riscos.
-              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
             ) : showQuestionsArea ? (
               // Aluno na plenária: as questões reveladas chegam por dados (o facilitador
               // comanda o ritmo), e a cascata é a mesma.
               plenaryQ?.list?.length ? (
-                <div className="vr-pbl-present-big">
+                <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
                     label="Questão para reflexão" icon="💭" progress emphasize />
                 </div>
@@ -1160,10 +1167,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             ) : chartForStaff ? (
               // release_risks (antes de "Mostrar gráfico"): o aluno está respondendo no
               // celular — mostra as instruções da Análise situacional, não o gráfico.
-              <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
             ) : (
               // Demais etapas: o aluno vê exatamente a mesma tela do facilitador.
-              <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
             )}
           </aside>
         )}

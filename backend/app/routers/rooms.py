@@ -34,6 +34,27 @@ def _row_to_room(r) -> dict:
     return d
 
 
+def _roteiro_com_banner(roteiro):
+    """Troca a CHAVE do banner de fundo por uma URL assinada, para a sala exibir.
+
+    O roteiro guarda a chave do S3, não a URL: presigned URLs duram horas e o roteiro
+    do episódio vive meses. A assinatura acontece a cada carga da sala — mesma
+    abordagem do vídeo de fundo do saguão (`lobby_bg_video`).
+    """
+    if not isinstance(roteiro, dict):
+        return roteiro
+    campos = roteiro.get("campos")
+    if not isinstance(campos, dict):
+        return roteiro
+    chave = campos.get("bannerFundo")
+    if isinstance(chave, str) and chave and "://" not in chave:
+        try:
+            campos["bannerFundo"] = presigned_url(chave, expires=6 * 3600)
+        except Exception:
+            campos["bannerFundo"] = ""    # banner indisponível não pode quebrar a sala
+    return roteiro
+
+
 def _is_scorm(slug: str | None) -> bool:
     """A licença (tenant) tem a integração OpenPBL/SCORM ativa?"""
     if not slug:
@@ -211,7 +232,9 @@ async def room_public(room_id: str):
             "risk_dimensions": (_json.loads(r["risk_dimensions"]) if isinstance(r["risk_dimensions"], str) else r["risk_dimensions"]),
             # Roteiro do episódio: é o conteúdo do encontro (sinopse, questões, riscos),
             # renderizado nativamente pela sala. Vale para o aluno também.
-            "roteiro": (_json.loads(r["roteiro"]) if isinstance(r["roteiro"], str) else r["roteiro"]),
+            "roteiro": _roteiro_com_banner(
+                _json.loads(r["roteiro"]) if isinstance(r["roteiro"], str) else r["roteiro"]
+            ),
             "created_at": r["created_at"],   # âncora do countdown do saguão (compartilhado)
             "scorm": _is_scorm(r["tenant_slug"])}
 

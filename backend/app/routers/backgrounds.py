@@ -14,13 +14,23 @@ from ..services.recording_service import s3_client, presigned_url
 
 router = APIRouter(prefix="/api/backgrounds", tags=["backgrounds"])
 PREFIX = "backgrounds/"
+# Banners de fundo da apresentação (roteiro do episódio) ficam em um prefixo PRÓPRIO:
+# sob `backgrounds/` eles apareceriam na galeria de vídeos do saguão.
+PREFIX_BANNER = "banners/"
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".ogg", ".ogv", ".mkv", ".avi", ".3gp")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
 
 
 class PresignBody(BaseModel):
     filename: str
     content_type: str = ""
     scope: str = ""
+    # "video" = vídeo de fundo do saguão; "image" = banner de fundo da apresentação.
+    kind: str = "video"
+
+
+class ViewBody(BaseModel):
+    key: str
 
 
 def _is_video(filename: str, content_type: str) -> bool:
@@ -32,12 +42,27 @@ def _is_video(filename: str, content_type: str) -> bool:
     return (filename or "").lower().endswith(VIDEO_EXTS)
 
 
+def _is_image(filename: str, content_type: str) -> bool:
+    if (content_type or "").startswith("image/"):
+        return True
+    return (filename or "").lower().endswith(IMAGE_EXTS)
+
+
+def _image_ctype(safe: str, content_type: str) -> str:
+    ctype = content_type or ""
+    if not ctype.startswith("image/"):
+        ext = safe.lower().rsplit(".", 1)[-1] if "." in safe else "png"
+        ctype = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+                 "gif": "image/gif", "avif": "image/avif"}.get(ext, "image/png")
+    return ctype
+
+
 def _safe_scope(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "", s or "")[:64]
 
 
-def _prefix(tenant_id: str, scope: str = "") -> str:
-    p = f"{PREFIX}{tenant_id}/"
+def _prefix(tenant_id: str, scope: str = "", base: str = PREFIX) -> str:
+    p = f"{base}{tenant_id}/"
     sc = _safe_scope(scope)
     if sc:
         p += f"{sc}/"
@@ -133,11 +158,16 @@ async def presign_background(
     """
     if not user.is_staff:
         raise HTTPException(403)
-    if not _is_video(body.filename or "", body.content_type or ""):
+    imagem = (body.kind or "video").lower() == "image"
+    if imagem:
+        if not _is_image(body.filename or "", body.content_type or ""):
+            raise HTTPException(400, "Envie uma imagem (.jpg, .png, .webp, …)")
+    elif not _is_video(body.filename or "", body.content_type or ""):
         raise HTTPException(400, "Envie um arquivo de vídeo (.mp4, .webm, …)")
     safe = _safe_name(body.filename)
-    key = f"{_prefix(tenant_id, body.scope)}{uuid.uuid4().hex}-{safe}"
-    ctype = _video_ctype(safe, body.content_type or "")
+    base = PREFIX_BANNER if imagem else PREFIX
+    key = f"{_prefix(tenant_id, body.scope, base)}{uuid.uuid4().hex}-{safe}"
+    ctype = _image_ctype(safe, body.content_type or "") if imagem else _video_ctype(safe, body.content_type or "")
     put_url = s3_client().generate_presigned_url(
         "put_object",
         Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": ctype},
@@ -150,3 +180,24 @@ async def presign_background(
         "name": safe,
         "url": presigned_url(key, expires=3600),
     }
+
+
+@router.post("/view")
+async def view_background(
+    body: ViewBody,
+    user: CurrentUser = Depends(get_current_user),
+    tenant_id: str = Depends(resolve_tenant_id),
+):
+    """URL de leitura (curta) para uma chave já guardada.
+
+    O que se persiste no roteiro é a CHAVE do S3, não a URL: presigned URLs expiram
+    em horas e o roteiro de um episódio vive meses. Quem for exibir pede uma URL
+    nova — aqui (edição) ou via `room_public` (dentro da sala).
+    """
+    if not user.is_staff:
+        raise HTTPException(403)
+    key = (body.key or "").strip()
+    # Só chaves DESTE tenant: sem isto, uma licença leria os arquivos de outra.
+    if not key or (f"/{tenant_id}/" not in key and not key.startswith(f"{PREFIX_BANNER}{tenant_id}/")):
+        raise HTTPException(404)
+    return {"key": key, "url": presigned_url(key, expires=6 * 3600)}

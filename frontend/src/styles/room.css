@@ -980,6 +980,18 @@
   flex: 1; min-width: 0; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
   background: #fff; box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
 }
+/* Banner de fundo da apresentação (enviado no roteiro do episódio). Fica atrás das
+   telas do roteiro e das cascatas; o gráfico traz fundo branco próprio e não é
+   afetado. As superfícies internas viram um véu translúcido para o texto continuar
+   legível sobre qualquer imagem. */
+.vr-pbl-present-big[data-banner] {
+  background-image: var(--vr-banner);
+  background-size: cover;
+  background-position: center;
+}
+.vr-pbl-present-big[data-banner] .vr-rot { background: rgba(255, 255, 255, .88); }
+.vr-pbl-present-big[data-banner] .vr-pbl-question { background: rgba(255, 255, 255, .82); }
+
 /* ── Telas do Roteiro da Videoconferência ──────────────────────────────────────
    O conteúdo do encontro é renderizado aqui (antes vinha do pacote SCORM embutido).
    Rola quando o texto é longo; facilitador e aluno usam exatamente o mesmo estilo. */
