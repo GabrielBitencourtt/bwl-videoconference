@@ -910,13 +910,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // questionário de riscos).
   const faltaRevelar = revealItems.length > 1 && reveal + 1 < revealItems.length;
   const proxima = STEPS[Math.min(stepIndex(pblStage) + 1, STEPS.length - 1)];
+  // Etapas cujo efeito já rodou na ENTRADA (liberação dos questionários) ou cujo
+  // clique dispara o efeito da etapa seguinte: o botão anuncia a PRÓXIMA ação, senão
+  // repetiria um "Liberar…" que já aconteceu.
+  const anunciaProxima = pblStage === "closing"
+    || pblStage === "release_risks" || pblStage === "release_feedback";
   const seqLabel = pblStage === "groups" && breakoutOpen
     ? "Encerrar os grupos"
     : faltaRevelar
       ? `${curStep.action} (${reveal + 1}/${revealItems.length})`
       // "groups" é a exceção: terminada a revelação, o clique ainda executa a AÇÃO da
       // própria etapa (abrir as salas) em vez de avançar.
-      : (revealItems.length > 1 && pblStage !== "groups") ? proxima.action
+      : (revealItems.length > 1 && pblStage !== "groups") || anunciaProxima
+        ? proxima.action
         : curStep.action;
 
   // Class-code só é liberado (mostrado ao facilitador) DEPOIS de clicar em "Iniciar o
@@ -1064,12 +1070,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           break;
         }
         case "situational":
-          // Os riscos aparecem um a um; só depois do último libera o questionário.
+          // Os riscos aparecem um a um; revelado o último, o clique JÁ libera o
+          // questionário e entra na etapa. Antes a liberação só acontecia ao SAIR
+          // dela — ou seja, um clique depois do botão anunciar "Liberar…", o que
+          // fazia o questionário abrir só quando o botão já dizia "Mostrar gráfico".
           if (reveal + 1 < situationalItems.length) { setReveal(reveal + 1); break; }
+          await sdk.openpbl.release(roomId, "risks").catch(() => {});
           await goToStep(next);
           break;
         case "release_risks":
-          await sdk.openpbl.release(roomId, "risks").catch(() => {});
+          // Questionário já liberado ao entrar aqui; este clique só passa a mostrar
+          // o gráfico também para os alunos.
           await goToStep(next);
           break;
         case "show_chart":
@@ -1078,10 +1089,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           break;
         case "closing":
           if (recording) { setRecording(false); await sdk.recording.stop(roomId).catch(() => setRecording(true)); }
+          // Mesma correção do questionário de riscos: libera as percepções ao ENTRAR
+          // na etapa de feedback, e não ao sair dela.
+          await sdk.openpbl.release(roomId, "perceptions").catch(() => {});
           await goToStep(next);
           break;
         case "release_feedback":
-          await sdk.openpbl.release(roomId, "perceptions").catch(() => {});
           await goToStep(next);
           break;
         case "done":
