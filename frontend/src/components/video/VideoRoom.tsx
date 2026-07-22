@@ -1116,14 +1116,15 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           )}
           {pblHost && amController && (
             <div className="vr-seq" data-danger={pblStage === "done" || undefined}>
-              <button className="vr-seq-label" onClick={runStep} disabled={stageBusy} title={seqLabel}>
+              {/* Só exibe a etapa atual — avançar é exclusividade do botão ao lado,
+                  para não disparar a ação sem querer ao ler o rótulo. */}
+              <span className="vr-seq-label" title={seqLabel}>
                 {stageBusy ? "…" : seqLabel}
+              </span>
+              <button className="vr-seq-go" onClick={runStep} disabled={stageBusy}
+                title={pblStage === "done" ? "Encerrar a sala" : "Executar a etapa e avançar"}>
+                {I.playTri}
               </button>
-              {pblStage !== "done" && (
-                <button className="vr-seq-go" onClick={runStep} disabled={stageBusy} title="Executar a etapa e avançar">
-                  {I.playTri}
-                </button>
-              )}
             </div>
           )}
           <ControlBar

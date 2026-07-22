@@ -854,14 +854,21 @@
 /* gap 14px = mesmo espaçamento do header-right (verde ↔ microfone), então o ▶ verde
    fica equidistante do rótulo e do 1º botão vermelho. */
 .vr-seq { display: inline-flex; align-items: center; gap: 14px; flex: none; margin-bottom: 15px; }
+/* Rótulo da etapa. Dentro do sequenciador (.vr-seq) é um <span> informativo — quem
+   avança é só o botão verde. Fora dele a mesma classe ainda veste um botão real
+   ("Assumir controle"), por isso o cursor/hover ficam escopados ali. */
 .vr-seq-label {
+  display: inline-flex; align-items: center;
   height: 30px; padding: 0 12px; border-radius: 8px;
   background: var(--vr-surface-2); color: var(--vr-text);
   border: 1px solid var(--vr-border); font-size: 12.5px; font-weight: 700;
-  cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s;
+  white-space: nowrap; transition: background .15s, border-color .15s;
 }
-.vr-seq-label:hover { border-color: var(--brand-accent); }
-.vr-seq-label:disabled { opacity: .6; cursor: default; }
+button.vr-seq-label { cursor: pointer; }
+button.vr-seq-label:hover { border-color: var(--brand-accent); }
+button.vr-seq-label:disabled { opacity: .6; cursor: default; }
+/* O rótulo é só leitura: não rouba o clique nem vira alvo de seleção acidental. */
+.vr-seq .vr-seq-label { cursor: default; user-select: none; }
 .vr-seq-go {
   display: grid; place-items: center; width: 46px; height: 30px; border-radius: 8px;
   background: #22c55e; border: none; color: #fff; cursor: pointer; transition: background .15s;
@@ -869,9 +876,11 @@
 .vr-seq-go:hover { background: #16a34a; }
 .vr-seq-go:disabled { opacity: .6; cursor: default; }
 .vr-seq-go svg { width: 18px; height: 18px; }
-/* Última tarefa = Encerrar a sala: rótulo vermelho. */
+/* Última tarefa = Encerrar a sala: rótulo E botão em vermelho (antes o botão sumia
+   nesta etapa, e a ação só existia no rótulo — que agora não é mais clicável). */
 .vr-seq[data-danger] .vr-seq-label { background: var(--vr-danger); color: #fff; border-color: var(--vr-danger); }
-.vr-seq[data-danger] .vr-seq-label:hover { background: #dc2626; }
+.vr-seq[data-danger] .vr-seq-go { background: var(--vr-danger); }
+.vr-seq[data-danger] .vr-seq-go:hover { background: #dc2626; }
 
 /* "Atividade atual" do aluno, no header: nome da etapa (sincronizado com o
    sequenciador do facilitador) + class-code ao lado (só durante o registro).
