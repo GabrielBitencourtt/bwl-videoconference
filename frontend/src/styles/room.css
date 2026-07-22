@@ -688,7 +688,10 @@
    apresentação (que agora ocupa o frame inteiro). Sem espaço vazio e sem cortar o
    rosto. `pointer-events: none` para não bloquear cliques na apresentação. */
 .vr-pbl-side .vr-pbl-head {
-  position: absolute; top: 12px; left: 12px; z-index: 5; pointer-events: none;
+  /* z-index ACIMA da cascata (.vr-pbl-question, z-index 5): com o mesmo valor, quem
+     vem depois no DOM ganha — a cascata cobria a câmera, e como ela refaz o fade-in
+     a cada item revelado, o facilitador via a própria imagem piscando. */
+  position: absolute; top: 12px; left: 12px; z-index: 6; pointer-events: none;
   flex: none; width: clamp(160px, 26%, 240px); padding: 0; gap: 0;
   border-bottom: none; background: transparent;
 }
@@ -1129,7 +1132,6 @@
   font-size: clamp(11px, 1.05vw, 13px); font-weight: 700;
   letter-spacing: .14em; text-transform: uppercase; color: var(--vr-text-dim);
 }
-.vr-pbl-qhead-ico { font-size: 1.1em; opacity: .9; }
 .vr-pbl-qdots { display: inline-flex; align-items: center; gap: 7px; }
 .vr-pbl-qdot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--vr-border);

@@ -1137,7 +1137,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                      label="Questão para reflexão" icon="💭" progress emphasize
+                      label="Questão para reflexão" progress emphasize
                       intro={rIntroQuestoes(roteiro)} />
                   ) : (
                     <div className="vr-pbl-question">
@@ -1167,7 +1167,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               plenaryQ?.list?.length ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                    label="Questão para reflexão" icon="💭" progress emphasize
+                    label="Questão para reflexão" progress emphasize
                     intro={rIntroQuestoes(roteiro)} />
                 </div>
               ) : null
@@ -1479,11 +1479,11 @@ function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: Roteir
       {relembrando && <div className="vr-rot-destaque">{relembrando}</div>}
       {sinopse.length > 0 && (
         <QuestionCascade items={sinopse} total={sinopse.length}
-          label="Revisitando a situação-problema" icon="📖" progress emphasize inline />
+          label="Revisitando a situação-problema" progress emphasize inline />
       )}
       {orientadoras.length > 0 && (
         <QuestionCascade items={orientadoras} total={orientadoras.length}
-          label="Questões orientadoras" icon="🧭" progress emphasize inline />
+          label="Questões orientadoras" progress emphasize inline />
       )}
     </div>
   );
@@ -1667,7 +1667,7 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
       {label && (
         <div className="vr-pbl-qhead">
           <span className="vr-pbl-qhead-label">
-            {icon && <span className="vr-pbl-qhead-ico">{icon}</span>}{label}
+            {label}
           </span>
           {progress && tot > 1 && (
             <span className="vr-pbl-qdots" aria-hidden="true">
@@ -1714,7 +1714,7 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   return dims.length ? (
     // Mesma animação/CSS das questões da plenária: mesmo componente e mesmas flags
     // (progress + emphasize) → cards idênticos, com dots e realce do último.
-    <QuestionCascade items={dims} total={dims.length} label="Principais riscos" icon="🎯" progress emphasize />
+    <QuestionCascade items={dims} total={dims.length} label="Principais riscos" progress emphasize />
   ) : (
     <div className="vr-pbl-question">
       <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
