@@ -895,10 +895,16 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // Quem conduz usa o próprio contador; os demais seguem o que ele transmite.
   const shownCount = amController
     ? reveal + 1
-    : (remoteReveal?.stage === pblStage ? remoteReveal.count : 1);
+    // Com os grupos abertos as 3 questões já foram todas reveladas (é o que libera a
+    // divisão). Dentro da sub-sala o aluno pode não receber o aviso do controlador,
+    // então essa condição garante que ele veja o material completo da discussão.
+    : (pblStage === "groups" && breakoutOpen) ? revealItems.length
+      : (remoteReveal?.stage === pblStage ? remoteReveal.count : 1);
 
   // Rótulo do botão sequencial (▶) — na plenária mostra a contagem de questões.
-  const seqLabel = revealItems.length > 1
+  const seqLabel = pblStage === "groups" && breakoutOpen
+    ? "Encerrar os grupos"
+    : revealItems.length > 1
     ? `${curStep.action} (${Math.min(reveal + 1, revealItems.length)}/${revealItems.length})`
     : curStep.action;
 
@@ -1017,9 +1023,17 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // As questões orientadoras aparecem uma a uma ANTES de dividir os grupos —
           // é com elas em tela que a turma vai discutir nas salas.
           if (reveal + 1 < roteiroOrientadoras.length) { setReveal(reveal + 1); break; }
-          // Divide os grupos (API OpenPBL) e abre as salas com contagem de 10 min.
-          await sdk.openpbl.syncGroups(roomId).catch(() => {});
-          await sdk.breakouts.open(roomId, 600).catch(() => {});
+          if (!breakoutOpen) {
+            // Divide os grupos (API OpenPBL) e abre as salas com contagem de 10 min.
+            // NÃO avança de etapa: durante a discussão a tela continua sendo a do
+            // Aquecimento — antes o cursor pulava para a plenária e os alunos viam,
+            // dentro do grupo, um conteúdo que só deveria aparecer depois.
+            await sdk.openpbl.syncGroups(roomId).catch(() => {});
+            await sdk.breakouts.open(roomId, 600).catch(() => {});
+            break;
+          }
+          // Grupos abertos: encerra as salas e só então segue para a plenária.
+          await sdk.breakouts.close(roomId).catch(() => {});
           await goToStep(next);
           break;
         case "plenary":
