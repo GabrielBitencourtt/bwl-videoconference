@@ -1229,7 +1229,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                      label="Questões para reflexão" progress emphasize />
+                      label="Questões para reflexão" progress emphasize
+                      intro={rIntroQuestoes(roteiro)} />
                   ) : (
                     <div className="vr-pbl-question">
                       <div className="vr-pbl-question-waiting">
@@ -1258,7 +1259,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               plenaryQ?.list?.length ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                    label="Questões para reflexão" progress emphasize />
+                    label="Questões para reflexão" progress emphasize
+                    intro={rIntroQuestoes(roteiro)} />
                 </div>
               ) : null
             ) : chartForStaff ? (
@@ -1458,6 +1460,13 @@ function rTitulo(r: RoteiroSnapshot | null, key: string): string {
   return r?.secoes?.find((s) => s.key === key)?.titulo ?? "";
 }
 
+/** Dos blocos fixos da plenária, o 1º ("o objetivo da discussão") abre a etapa da
+ *  plenária e os seguintes explicam a DINÂMICA das questões — estes pertencem à tela
+ *  "Questões para reflexão". Salas sem roteiro (ou com um bloco só) não têm intro. */
+function rIntroQuestoes(r: RoteiroSnapshot | null): RoteiroBlocoFixo[] {
+  return rBlocos(r, "plenaria").slice(1);
+}
+
 /** Blocos de texto fixo de uma seção — o "corpo" da tela de cada etapa. */
 function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
   return (
@@ -1534,7 +1543,9 @@ function RoteiroStage({ stage, roteiro, shown = 1 }: {
         : stage === "plenary" ? "plenaria"
           : stage === "release_risks" ? "analise"
             : "feedback";   // closing (o gráfico costuma cobrir esta etapa)
-  const blocos = rBlocos(roteiro, secao);
+  // Na plenária só entra o 1º bloco (o objetivo). Os seguintes descrevem a dinâmica
+  // das questões e abrem a etapa "Questões para reflexão" (ver `rIntroQuestoes`).
+  const blocos = stage === "plenary" ? rBlocos(roteiro, secao).slice(0, 1) : rBlocos(roteiro, secao);
 
   // Conteúdo variável por etapa.
   // Cascatas aparecem card a card, conforme o facilitador avança (`shown`).
@@ -1743,7 +1754,7 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
  *  MESMO componente (o aluno recebe a lista por dados), então a UI/animação fica num
  *  só lugar. `progress` mostra os passos (●) no cabeçalho e `emphasize` realça o card
  *  mais recente — ambos fazem sentido só na revelação progressiva (plenária). */
-function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false }: {
+function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false, intro }: {
   items: string[];
   total?: number;
   label?: string;
@@ -1752,6 +1763,8 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   emphasize?: boolean;
   /** Renderiza no fluxo (dentro de uma tela do roteiro) em vez de cobrir a area. */
   inline?: boolean;
+  /** Texto do roteiro que abre a etapa, acima dos cards. */
+  intro?: RoteiroBlocoFixo[];
   /** Texto do roteiro que ABRE a etapa, acima da cascata (a plenária usa a dinâmica
    *  das questões). Slot opcional — as questões em si não mudam. */
 }) {
@@ -1775,6 +1788,7 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
       )}
       {/* --vr-qn: quantos cards a etapa terá. O CSS usa para dividir a altura
           disponível e escolher o tamanho de fonte que ainda cabe. */}
+      {!!intro?.length && <RoteiroBlocos blocos={intro} />}
       <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}
         data-qn={tot} style={{ ["--vr-qn" as any]: String(tot) }}>
         {items.map((q, i) => (
