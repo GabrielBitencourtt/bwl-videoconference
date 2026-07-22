@@ -539,7 +539,7 @@ async def risk_chart(room_id: str, user: CurrentUser | None = Depends(optional_u
 
 _STAGES = (
     "session_start", "registration_open", "amplify_code", "registration_close",
-    "groups", "plenary", "question", "situational",
+    "synopsis", "groups", "plenary", "question", "situational",
     "release_risks", "show_chart", "closing", "release_feedback", "done",
 )
 

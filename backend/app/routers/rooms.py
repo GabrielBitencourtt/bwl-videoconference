@@ -23,12 +23,14 @@ ROOM_MAX_PARTICIPANTS = 35
 def _row_to_room(r) -> dict:
     d = dict(r)
     d["id"] = str(d["id"])
-    rd = d.get("risk_dimensions")   # jsonb → asyncpg devolve str; parseia p/ list
-    if isinstance(rd, str):
-        try:
-            d["risk_dimensions"] = _json.loads(rd)
-        except Exception:
-            d["risk_dimensions"] = None
+    # jsonb → asyncpg devolve str; parseia de volta para list/dict
+    for campo in ("risk_dimensions", "roteiro"):
+        bruto = d.get(campo)
+        if isinstance(bruto, str):
+            try:
+                d[campo] = _json.loads(bruto)
+            except Exception:
+                d[campo] = None
     return d
 
 
@@ -96,8 +98,8 @@ async def create_room(
            lobby_enabled, lobby_timer_title, lobby_timer_seconds, lobby_bg_video, lobby_auto_admit,
            guest_token, allow_camera, allow_mic, allow_screen_share, allow_whiteboard_edit,
            scheduled_at, external_ref, require_email, openpbl_activity_id, openpbl_dimensions_id,
-           class_package_url, risk_dimensions)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb)
+           class_package_url, risk_dimensions, episode_id, roteiro)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27::jsonb)
         RETURNING *
         """,
         tenant_id, room_id, body.title, body.description, user.id, max_participants, body.is_public,
@@ -110,6 +112,8 @@ async def create_room(
         body.scheduled_at, body.external_ref, body.require_email, body.openpbl_activity_id,
         body.openpbl_dimensions_id, (body.class_package_url or None),
         (_json.dumps(body.risk_dimensions) if body.risk_dimensions else None),
+        (body.episode_id or None),
+        (_json.dumps(body.roteiro) if body.roteiro else None),
     )
     return _row_to_room(row)
 
@@ -181,7 +185,7 @@ async def room_public(room_id: str):
         """SELECT r.title, r.require_email, r.allow_whiteboard_edit,
                   r.lobby_enabled, r.lobby_timer_title, r.lobby_timer_seconds,
                   r.lobby_bg_video, r.lobby_auto_admit, r.class_package_url, r.risk_dimensions,
-                  r.created_at,
+                  r.roteiro, r.created_at,
                   t.branding, t.name AS tenant_name, t.slug AS tenant_slug
            FROM video_rooms r LEFT JOIN tenants t ON t.id = r.tenant_id WHERE r.id=$1""",
         room_id,
@@ -205,6 +209,9 @@ async def room_public(room_id: str):
             "lobby_auto_admit": r["lobby_auto_admit"],
             "class_package_url": r["class_package_url"],
             "risk_dimensions": (_json.loads(r["risk_dimensions"]) if isinstance(r["risk_dimensions"], str) else r["risk_dimensions"]),
+            # Roteiro do episódio: é o conteúdo do encontro (sinopse, questões, riscos),
+            # renderizado nativamente pela sala. Vale para o aluno também.
+            "roteiro": (_json.loads(r["roteiro"]) if isinstance(r["roteiro"], str) else r["roteiro"]),
             "created_at": r["created_at"],   # âncora do countdown do saguão (compartilhado)
             "scorm": _is_scorm(r["tenant_slug"])}
 

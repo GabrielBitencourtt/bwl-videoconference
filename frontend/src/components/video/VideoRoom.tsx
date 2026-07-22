@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, lazy, Suspense, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, lazy, Suspense, type ReactNode } from "react";
 import {
   LiveKitRoom, RoomAudioRenderer, GridLayout, ParticipantTile,
   useTracks, useParticipants, useTrackToggle, useRoomContext, useLocalParticipant,
@@ -10,7 +10,7 @@ import "../../styles/room.css";
 import { useSDK } from "../../lib/sdk-context";
 import { guestAuth } from "../../lib/guest-auth";
 import { applyBranding, type Branding } from "../../lib/branding";
-import type { BreakoutState, BreakoutGroup, OpenPblStage } from "../../lib/video-rooms-sdk";
+import type { BreakoutState, BreakoutGroup, OpenPblStage, RoteiroSnapshot, RoteiroBlocoFixo } from "../../lib/video-rooms-sdk";
 import RoomChat from "./RoomChat";
 import LobbyPanel from "./LobbyPanel";
 import RemoteControlEnforcer from "./RemoteControlEnforcer";
@@ -575,10 +575,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [scorm, setScorm] = useState(false);
   const [pblRoster, setPblRoster] = useState<any | null>(null);   // status dos alunos (OpenPBL)
-  const [pblStep, setPblStep] = useState<string>("");             // título do slide atual (reportado pelo pacote)
-  const [pblQuestion, setPblQuestion] = useState<string>("");     // texto da questão provocadora atual (corpo do slide, reportado pelo pacote)
-  const [pblQuestions, setPblQuestions] = useState<string[]>([]); // TODAS as questões da plenária, pré-carregadas do carousel do pacote (ordem Reflexão 1..N)
-  const [plenaryQ, setPlenaryQ] = useState<{ list: string[]; total: number } | null>(null); // questões da plenária reveladas até agora (recebidas pelo aluno via dados, sem screen-share)
+  const [plenaryQ, setPlenaryQ] = useState<{ list: string[]; total: number } | null>(null); // questões da plenária reveladas até agora (recebidas pelo aluno via dados)
   const [clock, setClock] = useState("");   // horário (HH:MM) mostrado ao lado do class-code no header do facilitador
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -589,6 +586,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [packageUrl, setPackageUrl] = useState<string | null>(null);  // URL do Pacote de Classe → QR code
   const [qrOpen, setQrOpen] = useState(false);
   const [roomDimensions, setRoomDimensions] = useState<string[]>([]);  // dimensões de risco da sala (cascata na Análise situacional)
+  // Roteiro do episódio: é o CONTEÚDO do encontro exibido na área central — substituiu
+  // o pacote SCORM de apresentação, que era transmitido por screen-share recortado.
+  const [roteiro, setRoteiro] = useState<RoteiroSnapshot | null>(null);
 
   // ── Papéis de sessão: moderadores (poderes de host), controlador (dirige o
   //    sequenciador — "assumir controle") e câmera fixada na área de conteúdo. ──
@@ -620,9 +620,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
 
   const canEditBoard = amStaff || boardEdit;
   const room = useRoomContext();
-  const [presenting, setPresenting] = useState(false);          // apresentação sendo transmitida
-  const presentTrackRef = useRef<MediaStreamTrack | null>(null);
-  const presentElRef = useRef<HTMLDivElement | null>(null);     // área do slide (alvo do recorte)
 
   // Branding (logo/cor/nome) via endpoint público — funciona até no embed
   // cross-site, onde rooms.get (autenticado) não está disponível.
@@ -634,6 +631,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       setBoardEdit(!!(r as any).allow_whiteboard_edit);   // padrão da sala
       setPackageUrl((r as any).class_package_url || null);
       setRoomDimensions(Array.isArray((r as any).risk_dimensions) ? (r as any).risk_dimensions : []);
+      setRoteiro(((r as any).roteiro as RoteiroSnapshot) || null);
       applyBranding(r.branding as Branding);
     }).catch(() => {});
   }, [roomId]);
@@ -659,33 +657,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
         setBoardEdit(payload.allow_whiteboard_edit);
     });
   }, [roomId, identity]);
-
-  // A apresentação embutida reporta a etapa atual (para o rótulo do ▶).
-  useEffect(() => {
-    if (!scorm) return;
-    const onMsg = (e: MessageEvent) => {
-      const d = e.data;
-      if (!d || d.source !== "openpbl-package") return;
-      // DEBUG: dump do PAYLOAD COMPLETO de cada msg da ponte (p/ descobrir onde vem o
-      // texto das questões — o pacote manda `step` mas com label/body vazios).
-      try { console.log("[openpbl-msg]", d.type, JSON.stringify(d)); } catch { console.log("[openpbl-msg]", d.type, d); }
-      if (d.type === "step" && typeof d.label === "string") {
-        setPblStep(d.label);
-        // Corpo do slide = texto da questão provocadora (fallback do overlay se a
-        // lista pré-carregada ainda não chegou). Só atualiza se não-vazio.
-        if (typeof d.body === "string" && d.body.trim()) setPblQuestion(d.body.trim());
-      }
-      // Lista completa das questões de reflexão, pré-carregada do carousel do pacote:
-      // o overlay passa a trocar sozinho por qCount, sem depender do pacote avançar.
-      if (d.type === "questions" && Array.isArray(d.list)) {
-        const list = d.list.map((q: any) => String(q || "").trim()).filter(Boolean);
-        // A ponte reenvia a cada tick — só atualiza (re-render) se a lista mudou.
-        if (list.length) setPblQuestions((prev) => prev.join("") === list.join("") ? prev : list);
-      }
-    };
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [scorm]);
 
   // OpenPBL: roster (bordas de status dos alunos + código) — só em salas scorm.
   useEffect(() => {
@@ -729,47 +700,6 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (amStaff) sdk.whiteboard.toggle(roomId, next).catch(() => {});
   };
 
-  // Transmite SÓ a área da apresentação aos alunos, recortando o compartilhamento
-  // da própria aba (Region Capture). O iframe do play2 é cross-origin e não pode
-  // ser capturado direto, mas o recorte da aba funciona por cima dele — o aluno
-  // recebe como um screen-share comum (cai no spotlight da grade).
-  // Retorna true se a transmissão FICOU ATIVA (iniciou), false se parou/cancelou/falhou.
-  const togglePresent = async (): Promise<boolean> => {
-    if (presenting) {
-      const t = presentTrackRef.current;
-      if (t) { try { await room.localParticipant.unpublishTrack(t as any); } catch { /* */ } t.stop(); }
-      presentTrackRef.current = null;
-      setPresenting(false);
-      return false;
-    }
-    const el = presentElRef.current;
-    if (!el) return false;
-    try {
-      const md = navigator.mediaDevices as any;
-      const stream: MediaStream = await md.getDisplayMedia({
-        video: { frameRate: 15 },
-        audio: false,
-        preferCurrentTab: true,     // Chrome/Edge: força a aba atual (necessário p/ o recorte)
-      });
-      const track = stream.getVideoTracks()[0];
-      const CT = (window as any).CropTarget;
-      if (CT?.fromElement && (track as any).cropTo) {
-        try {
-          const target = await CT.fromElement(el);
-          await (track as any).cropTo(target);   // recorta só para a área do slide
-        } catch { /* sem recorte disponível: transmite a aba inteira */ }
-      }
-      track.addEventListener("ended", () => {    // professor parou pela barra do navegador
-        presentTrackRef.current = null;
-        setPresenting(false);
-      });
-      await room.localParticipant.publishTrack(track as any, { source: Track.Source.ScreenShare });
-      presentTrackRef.current = track;
-      setPresenting(true);
-      return true;
-    } catch { /* professor cancelou o seletor */ return false; }
-  };
-
   // confirm() nativo é bloqueado em iframe cross-origin (embed) → modal in-app.
   const doEndRoom = () => { sdk.rooms.end(roomId).catch(() => {}); setConfirmEnd(false); };
 
@@ -791,21 +721,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const rawStage = pblClass?.stage as OpenPblStage;
   const pblStage: OpenPblStage = STEP_IDS.includes(rawStage) ? rawStage : "session_start";
   const curStep = stepDef(pblStage);
-  // Visibilidade da ÁREA DE CONTEÚDO por etapa:
-  //  - até ANTES da plenária (question): PACOTE (recorte transmitido aos alunos);
-  //  - plenária (question): QUESTÕES (pacote some para todos);
-  //  - Análise situacional (situational): cascata das DIMENSÕES de risco (todos);
+  // Visibilidade da ÁREA DE CONTEÚDO por etapa. Todo o conteúdo vem do ROTEIRO do
+  // episódio e é renderizado nativamente — facilitador e aluno veem a MESMA tela:
+  //  - até a plenária: os cards do roteiro da etapa (abertura, registro, sinopse…);
+  //  - plenária (question): as QUESTÕES, reveladas uma a uma;
+  //  - Análise situacional (situational): cascata dos RISCOS a avaliar;
   //  - a partir de "Liberar análise de riscos" (release_risks): GRÁFICO p/ host/moderador;
   //  - "Mostrar gráfico" (show_chart) em diante: GRÁFICO também para os alunos.
-  const showPackage = stepIndex(pblStage) < stepIndex("question");
   const showQuestionsArea = pblStage === "question";
   const showDimensions = pblStage === "situational";
   const chartForStaff = stepIndex(pblStage) >= stepIndex("release_risks");
   const chartForStudents = stepIndex(pblStage) >= stepIndex("show_chart");
   const chartAvailable = chartForStaff;   // toggle do gráfico (host/moderador)
 
-  // A apresentação fica SEMPRE no frame ao lado da câmera do facilitador e da grade
-  // de alunos — nunca ocupa a tela inteira (nem na plenária/questões).
   const [chartHidden, setChartHidden] = useState(false);
   // Filtro da legenda do gráfico (séries ocultas) — SINCRONIZADO: o controlador aplica
   // e replica para os alunos por dados; o aluno só reflete (não interage).
@@ -813,11 +741,18 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const toggleChartSeries = (name: string) =>
     setChartFilter((f) => (f.includes(name) ? f.filter((x) => x !== name) : [...f, name]));
   const [stageBusy, setStageBusy] = useState(false);
-  const [qCount, setQCount] = useState(0);   // "Questão para reflexão" já mostradas (×5)
-  // Fallback quando o pacote NÃO manda a lista pré-carregada (`pblQuestions` vazio):
-  // acumulamos os corpos de slide (pblQuestion) à medida que o pacote avança, formando
-  // a mesma cascata. Sem isto o overlay ficava preso na 1ª questão.
-  const [qBodies, setQBodies] = useState<string[]>([]);
+  const [qCount, setQCount] = useState(0);   // questões da plenária já reveladas
+
+  // ── Conteúdo do encontro, lido do roteiro do episódio ──
+  // Memoizado: `rLista` devolve um array novo a cada chamada e estas listas entram em
+  // dependências de efeito (o heartbeat das questões reiniciaria a cada render).
+  const roteiroQuestions = useMemo(() => rLista(roteiro, "questoesPlenaria"), [roteiro]);
+  // Riscos a avaliar na Análise situacional. Vêm do roteiro; salas antigas (sem roteiro)
+  // ainda caem nas dimensões do conjunto escolhido na criação.
+  const situationalItems = useMemo(() => {
+    const riscos = rLista(roteiro, "riscos");
+    return riscos.length ? riscos : roomDimensions;
+  }, [roteiro, roomDimensions]);
 
   // ---- Class code (ao lado da etapa atual) + popup grande transmitido p/ a sala ----
   // Facilitador vê sempre; o aluno só enquanto o registro está aberto (e não oculto).
@@ -899,25 +834,16 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     });
   }, [scorm, roomId]);
 
-  // Reset do contador/lista de questões ao sair da etapa de plenária.
-  useEffect(() => { if (pblStage !== "question") { setQCount(0); setQBodies([]); } }, [pblStage]);
-
-  // Na plenária, cada corpo de slide que o pacote reporta (pblQuestion) entra na cascata
-  // acumulada — é o que faz as questões avançarem quando não há lista pré-carregada.
-  useEffect(() => {
-    if (pblStage !== "question") return;
-    const q = pblQuestion.trim();
-    if (!q) return;
-    setQBodies((prev) => (prev[prev.length - 1] === q || prev.includes(q)) ? prev : [...prev, q]);
-  }, [pblStage, pblQuestion]);
+  // Reset do contador de questões ao sair da etapa de plenária.
+  useEffect(() => { if (pblStage !== "question") setQCount(0); }, [pblStage]);
 
   const goToStep = async (id: OpenPblStage) => {
     try { setPblClass(await sdk.openpbl.setStage(roomId, id)); } catch { /* */ }
   };
 
-  // Total de questões da plenária: vem do pacote (carousel pré-carregado) quando
-  // disponível; senão cai no padrão. Torna o sequenciador independente do "×5" fixo.
-  const plenaryTotal = pblQuestions.length || PLENARY_QUESTIONS;
+  // Total de questões da plenária: quantas o roteiro do episódio trouxer (o padrão
+  // vale só para salas sem roteiro).
+  const plenaryTotal = roteiroQuestions.length || PLENARY_QUESTIONS;
 
   // Rótulo do botão sequencial (▶) — na plenária mostra a contagem de questões.
   const seqLabel = pblStage === "question"
@@ -942,16 +868,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     return () => clearInterval(id);
   }, []);
 
-  // Questões REVELADAS até agora (cascata): com lista pré-carregada, da 1ª até a atual
-  // (qCount); sem lista, os corpos de slide acumulados (qBodies), que crescem a cada
-  // avanço do pacote. Antes o fallback era um único corpo → travava na 1ª questão.
-  const revealedQuestions = pblStage === "question"
-    ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : qBodies)
-    : [];
+  // Questões REVELADAS até agora (cascata): do roteiro do episódio, da 1ª até a atual.
+  const revealedQuestions = pblStage === "question" ? roteiroQuestions.slice(0, qCount + 1) : [];
 
-  // Facilitador transmite as questões reveladas da plenária por DADOS (não por
-  // screen-share): o aluno renderiza a MESMA cascata. Reenvia a cada 3s enquanto na
-  // etapa, para quem entrar depois. Fora da etapa, envia lista vazia (limpa no aluno).
+  // O controlador transmite as questões já reveladas: o aluno renderiza a MESMA cascata.
+  // Reenvia a cada 3s enquanto na etapa, para quem entrar depois. Fora da etapa, envia
+  // lista vazia (limpa no aluno).
   useEffect(() => {
     if (!amController || !room) return;   // só quem tem o controle transmite (sem duplicar)
     const inQ = pblStage === "question";
@@ -960,7 +882,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       // "PC manager is closed" (durante reconexão) e polui o console de erros.
       if (room.state !== ConnectionState.Connected) return;
       try {
-        const list = inQ ? (pblQuestions.length ? pblQuestions.slice(0, qCount + 1) : qBodies) : [];
+        const list = inQ ? roteiroQuestions.slice(0, qCount + 1) : [];
         const data = new TextEncoder().encode(JSON.stringify({
           source: "webconf", type: "plenary-questions", list, total: plenaryTotal,
         }));
@@ -971,7 +893,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!inQ) return;
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
-  }, [amController, room, pblStage, qCount, pblQuestions, qBodies, plenaryTotal]);
+  }, [amController, room, pblStage, qCount, roteiroQuestions, plenaryTotal]);
 
   // Filtro do gráfico: o controlador transmite as séries ocultas → o gráfico do aluno
   // fica sincronizado. Reenvia a cada 3s enquanto o gráfico está no ar (quem entra
@@ -992,23 +914,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     return () => clearInterval(id);
   }, [amController, room, chartForStaff, chartFilter]);
 
-  // Re-recorta a transmissão para a área do pacote sempre que ela (re)aparece — ex.: após
-  // os grupos o iframe remonta e o CropTarget antigo fica órfão (o aluno veria preto).
-  useEffect(() => {
-    if (!presenting || !showPackage) return;
-    const track = presentTrackRef.current;
-    const el = presentElRef.current;
-    if (!track || !el) return;
-    const CT = (window as any).CropTarget;
-    if (CT?.fromElement && (track as any).cropTo) {
-      CT.fromElement(el).then((t: any) => (track as any).cropTo(t)).catch(() => {});
-    }
-  }, [presenting, showPackage, pblStage]);
-
-  // Botão sequencial: executa a AÇÃO da etapa atual (efeitos ✅ da webconf + um "next"
-  // best-effort ao pacote) e avança para a próxima. Alguns efeitos INTERNOS do pacote
-  // (endereçar pergunta verde→vermelho, converter quadros p/ verde, desconectar ao fim
-  // do quiz) NÃO têm endpoint neste repo — ficam marcados como TODO até existir a API.
+  // Botão sequencial: executa a AÇÃO da etapa atual e avança para a próxima.
+  // O conteúdo de cada etapa (sinopse, questões, riscos) vem do ROTEIRO do episódio e
+  // é renderizado aqui mesmo — não há mais pacote externo para avançar em paralelo.
   const runStep = async () => {
     setStageBusy(true);
     const id = pblStage;
@@ -1017,28 +925,21 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     try {
       switch (id) {
         case "session_start":
-          // Inicia o screen-share RECORTADO só na área do pacote (presentElRef) — assim
-          // os alunos têm a visão EXATA do pacote de apresentação. É o 1º clique do
-          // sequenciador (gesto do usuário exigido pelo getDisplayMedia); vem antes do
-          // startClass p/ preservar o gesto. Só AVANÇA se o facilitador confirmar o
-          // compartilhamento — se cancelar (sem querer), fica na etapa p/ tentar de novo.
-          if (!presenting) {
-            const shared = await togglePresent();
-            if (!shared) break;   // cancelou/falhou → não avança
-          }
           if (!pblClass?.active && pblRoster?.activity_id) await sdk.openpbl.startClass(roomId, pblRoster.activity_id).catch(() => {});
-          presentationPost("next");
           await goToStep(next);
           break;
         case "registration_open":
-          // Registro abre por padrão ao iniciar a aula; aqui só avança a tela do pacote.
-          presentationPost("next");
+          // Registro abre por padrão ao iniciar a aula; aqui só avança a etapa.
           await goToStep(next);
           break;
         case "registration_close":
           await sdk.openpbl.closeRegistration(roomId).catch(() => {});
           await sdk.openpbl.syncGroups(roomId).catch(() => {});
-          presentationPost("next");
+          await goToStep(next);
+          break;
+        case "synopsis":
+          // Revisitando a situação-problema: os dois cards da sinopse ficam na tela até
+          // o facilitador seguir para o aquecimento.
           await goToStep(next);
           break;
         case "groups":
@@ -1048,35 +949,22 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await goToStep(next);
           break;
         case "plenary":
-          // Todos voltam à sala principal para a discussão em plenária. Ao entrar na
-          // plenária (próxima etapa = questões), o pacote SOME para todos: encerra o
-          // screen-share (o aluno passa a ver as questões por dados).
+          // Todos voltam à sala principal para a discussão em plenária.
           if (breakoutOpen) await sdk.breakouts.close(roomId).catch(() => {});
-          if (presenting) await togglePresent().catch(() => {});
-          presentationPost("next");   // avança o pacote (mantém a ponte na posição do carousel)
           await goToStep(next);
           break;
         case "question": {
-          // Plenária: as questões são transmitidas por DADOS (overlay no aluno) — sem
-          // screen-share. Com lista pré-carregada o overlay avança pela qCount; SEM lista,
-          // mandamos "next" ao pacote a cada clique → o novo corpo do slide chega pela
-          // ponte e entra na cascata (qBodies).
+          // Plenária: cada clique revela mais uma questão do roteiro (cascata), e a lista
+          // revelada é transmitida por dados para os alunos verem a mesma tela.
           // 1ª questão: inicia a gravação em BACKGROUND (o egress pode demorar a responder;
           // NÃO pode bloquear o avanço do sequenciador — era isso que travava o botão).
           if (qCount === 0 && !recording) { setRecording(true); sdk.recording.start(roomId).catch(() => setRecording(false)); }
-          if (!pblQuestions.length) presentationPost("next");
-          // TODO(pacote): "software endereça a pergunta (verde→vermelho)" — sem endpoint.
           const n = qCount + 1;
           setQCount(n);
-          if (n >= plenaryTotal) {
-            if (presenting) await togglePresent().catch(() => {});
-            await goToStep("situational");
-          }
+          if (n >= plenaryTotal) await goToStep("situational");
           break;
         }
         case "situational":
-          // TODO(pacote): "converte todos os quadros dos participantes para verde" — sem endpoint.
-          presentationPost("next");
           await goToStep(next);
           break;
         case "release_risks":
@@ -1089,13 +977,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           break;
         case "closing":
           if (recording) { setRecording(false); await sdk.recording.stop(roomId).catch(() => setRecording(true)); }
-          presentationPost("next");
           await goToStep(next);
           break;
         case "release_feedback":
           await sdk.openpbl.release(roomId, "perceptions").catch(() => {});
-          // TODO(pacote): "participantes desconectados ao encerrar o quiz" — possível via
-          // moderação (force-kick), mas o gatilho (fim do quiz) é do pacote.
           await goToStep(next);
           break;
         case "done":
@@ -1234,50 +1119,51 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                   </div>
                 ) : null
               ) : showDimensions ? (
-                // Análise situacional: cascata das DIMENSÕES de risco (injetadas na sala).
-                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
-              ) : (showPackage || showQuestionsArea) ? (
-                // Até a plenária: o pacote embutido (recorte transmitido aos alunos). Na
-                // plenária ele fica MONTADO POR BAIXO (a ponte segue viva enviando as
-                // questões) e a cascata cobre por cima → o pacote some visualmente.
-                <div className="vr-pbl-present-big" ref={presentElRef}>
-                  <PresentationFrame activityId={pblRoster.activity_id} email={pblRoster.facilitator_email} name={pblRoster.facilitator_name} />
-                  {showQuestionsArea && (
-                    revealedQuestions.length ? (
-                      <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                        label="Questão para reflexão" icon="💭" progress emphasize />
-                    ) : (
-                      <div className="vr-pbl-question">
-                        <div className="vr-pbl-question-waiting">
-                          Aguardando as questões do pacote…
-                          <span>Reempacote a apresentação (tipo PRESENTATION) informando as questões de reflexão.</span>
-                        </div>
+                // Análise situacional: cascata dos RISCOS a avaliar (roteiro do episódio).
+                <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+              ) : showQuestionsArea ? (
+                <div className="vr-pbl-present-big">
+                  {revealedQuestions.length ? (
+                    <QuestionCascade items={revealedQuestions} total={plenaryTotal}
+                      label="Questão para reflexão" icon="💭" progress emphasize />
+                  ) : (
+                    <div className="vr-pbl-question">
+                      <div className="vr-pbl-question-waiting">
+                        Nenhuma questão no roteiro deste episódio.
+                        <span>Preencha as questões da plenária em Gerenciar produção → Roteiro da Videoconferência.</span>
                       </div>
-                    )
+                    </div>
                   )}
                 </div>
-              ) : null
+              ) : (
+                // Demais etapas: a tela do roteiro correspondente.
+                <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+              )
             ) : chartForStudents ? (
-              // "Mostrar gráfico" em diante: o aluno também vê o gráfico — ESTÁTICO
-              // (sem hover/tooltip/filtro e sem a contagem de pendentes).
+              // "Mostrar gráfico" em diante: o aluno também vê o gráfico — segue o filtro
+              // do facilitador e não vê a contagem de pendentes.
               <div className="vr-pbl-present-big">
                 <RiskChart roomId={roomId} hiddenSeries={chartFilter} />
               </div>
             ) : showDimensions ? (
-              // Análise situacional: aluno vê a MESMA cascata das dimensões de risco.
-              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={roomDimensions} /></div>
-            ) : showQuestionsArea && plenaryQ?.list?.length ? (
-              // Aluno na plenária: recebe as questões por dados e mostra a MESMA cascata.
-              <div className="vr-pbl-present-big">
-                <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                  label="Questão para reflexão" icon="💭" progress emphasize />
-              </div>
-            ) : showPackage ? (
-              // Aluno até antes da plenária: apresentação transmitida pelo host (screen-share).
-              <StudentPresentation />
+              // Análise situacional: aluno vê a MESMA cascata dos riscos.
+              <div className="vr-pbl-present-big"><RiskDimensions roomId={roomId} dims={situationalItems} /></div>
+            ) : showQuestionsArea ? (
+              // Aluno na plenária: as questões reveladas chegam por dados (o facilitador
+              // comanda o ritmo), e a cascata é a mesma.
+              plenaryQ?.list?.length ? (
+                <div className="vr-pbl-present-big">
+                  <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
+                    label="Questão para reflexão" icon="💭" progress emphasize />
+                </div>
+              ) : null
+            ) : chartForStaff ? (
+              // release_risks (antes de "Mostrar gráfico"): o aluno está respondendo no
+              // celular — mostra as instruções da Análise situacional, não o gráfico.
+              <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
             ) : (
-              // release_risks (antes de "Mostrar gráfico"): nada para o aluno.
-              null
+              // Demais etapas: o aluno vê exatamente a mesma tela do facilitador.
+              <div className="vr-pbl-present-big"><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
             )}
           </aside>
         )}
@@ -1437,33 +1323,114 @@ function VideoGrid() {
   );
 }
 
-/* Base do launcher OpenPBL (play2). A apresentação é embutida por Invite. */
-const OPENPBL_PLAY_BASE = "https://play2.openpbl.ai";
+/* ── Roteiro da Videoconferência: leitura e renderização ──────────────────────
+ *
+ * O conteúdo do encontro (sinopse, questões, riscos e os textos fixos de cada
+ * seção) vem congelado na sala, montado pelo CustomerApp a partir do roteiro do
+ * episódio. Antes isso era um pacote SCORM embutido por iframe e transmitido aos
+ * alunos por screen-share recortado; agora a própria sala É a apresentação, então
+ * facilitador e aluno renderizam exatamente a mesma tela.
+ */
 
-/** Envia comando à apresentação embutida (ponte postMessage — o pacote escuta). */
-function presentationPost(type: "next" | "prev" | "goto", hash?: string) {
-  const f = document.getElementById("openpbl-presentation") as HTMLIFrameElement | null;
-  f?.contentWindow?.postMessage({ source: "bwl-webconf", type, hash }, "*");
+/** Campo de texto do roteiro (vazio se ausente). */
+function rTexto(r: RoteiroSnapshot | null, name: string): string {
+  const v = r?.campos?.[name];
+  return typeof v === "string" ? v.trim() : "";
 }
 
-/** Apresentação OpenPBL embutida (área principal). Lança direto (sem formulário)
- *  com a identidade do facilitador; `presenterOnly=1` = só os slides, sem gerar
- *  código (a webconf faz isso) e aceitando o ▶ da webconf. Preenche o container. */
-function PresentationFrame({ activityId, email, name }: { activityId: string; email?: string; name?: string }) {
-  // /Invite/{activityId} resolve activityId→courseId no play (nativo). Passa a
-  // identidade do facilitador (nome/e-mail já conhecidos) para o site.js do play2
-  // auto-preencher/pular o form, e presenterOnly=1 pro pacote rodar em modo
-  // apresentação (sem gerar código; aceita o ▶). profile=aluno = só os slides.
-  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
-  const first = parts[0] || "Facilitador";
-  const last = parts.slice(1).join(" ") || first;
-  const q = new URLSearchParams({ profile: "aluno", presenterOnly: "1", firstName: first, lastName: last });
-  if (name) q.set("name", name);
-  if (email) q.set("email", email);
-  const src = `${OPENPBL_PLAY_BASE}/Invite/${encodeURIComponent(activityId)}?${q.toString()}`;
+/** Campo de lista do roteiro, já sem os itens em branco que o formulário permite. */
+function rLista(r: RoteiroSnapshot | null, name: string): string[] {
+  const v = r?.campos?.[name];
+  return Array.isArray(v) ? v.map((x) => String(x || "").trim()).filter(Boolean) : [];
+}
+
+/** Textos fixos de uma seção do roteiro (iguais em todo episódio). */
+function rBlocos(r: RoteiroSnapshot | null, key: string): RoteiroBlocoFixo[] {
+  return r?.secoes?.find((s) => s.key === key)?.blocosFixos ?? [];
+}
+
+/** Blocos de texto fixo de uma seção — o "corpo" da tela de cada etapa. */
+function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
   return (
-    <iframe id="openpbl-presentation" className="vr-present-iframe" title="Apresentação OpenPBL" src={src}
-      allow="autoplay; fullscreen; microphone; camera" />
+    <>
+      {blocos.map((b, i) => (
+        <div className="vr-rot-bloco" key={i}>
+          {b.titulo && <div className="vr-rot-bloco-tit">{b.titulo}</div>}
+          {b.lista ? (
+            <ul className="vr-rot-bloco-ul">
+              {b.paragrafos.map((t, k) => <li key={k}>{t}</li>)}
+            </ul>
+          ) : (
+            b.paragrafos.map((t, k) => <p key={k}>{t}</p>)
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Tela de uma etapa do roteiro: título da seção + textos fixos + o conteúdo
+ *  variável que aquela etapa pede. As etapas com cascata (plenária e análise
+ *  situacional) e o gráfico são tratados fora daqui. */
+function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: RoteiroSnapshot | null }) {
+  if (!roteiro) {
+    return (
+      <div className="vr-pbl-question">
+        <div className="vr-pbl-question-waiting">
+          Sem roteiro para este encontro.
+          <span>Escolha o episódio ao criar a sala — o roteiro é preenchido em Gerenciar produção.</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Abertura: vinheta da série (o único conteúdo que não é card de texto corrido).
+  if (stage === "session_start") {
+    const serie = rTexto(roteiro, "serieTemporada");
+    const titulo = rTexto(roteiro, "tituloEpisodio") || roteiro.episodio?.titulo || "";
+    const marca = rTexto(roteiro, "marcaSerie");
+    const direitos = rTexto(roteiro, "direitos");
+    return (
+      <div className="vr-rot vr-rot-abertura">
+        {marca && <div className="vr-rot-marca">{marca}</div>}
+        {serie && <div className="vr-rot-serie">{serie}</div>}
+        {titulo && <div className="vr-rot-titulo">{titulo}</div>}
+        {direitos && <div className="vr-rot-direitos">{direitos}</div>}
+      </div>
+    );
+  }
+
+  // Demais etapas: seção do roteiro correspondente.
+  const secao = stage === "registration_open" || stage === "registration_close" ? "abertura"
+    : stage === "synopsis" ? "revisitando"
+      : stage === "groups" ? "aquecimento"
+        : stage === "plenary" ? "plenaria"
+          : stage === "release_risks" ? "analise"
+            : "feedback";   // closing / release_feedback / done
+  const blocos = rBlocos(roteiro, secao);
+
+  // Conteúdo variável por etapa.
+  const sinopse = stage === "synopsis"
+    ? [rTexto(roteiro, "sinopseParte1"), rTexto(roteiro, "sinopseParte2")].filter(Boolean)
+    : [];
+  const orientadoras = stage === "groups" ? rLista(roteiro, "questoesOrientadoras") : [];
+  const relembrando = stage === "plenary" ? rTexto(roteiro, "relembrandoEpisodio") : "";
+
+  return (
+    <div className="vr-rot">
+      {/* Na abertura os blocos fixos são as instruções de registro de presença —
+          é o que o participante precisa ler para entrar com o class code. */}
+      {!!blocos.length && <RoteiroBlocos blocos={blocos} />}
+      {relembrando && <div className="vr-rot-destaque">{relembrando}</div>}
+      {sinopse.length > 0 && (
+        <QuestionCascade items={sinopse} total={sinopse.length}
+          label="Revisitando a situação-problema" icon="📖" progress emphasize />
+      )}
+      {orientadoras.length > 0 && (
+        <QuestionCascade items={orientadoras} total={orientadoras.length}
+          label="Questões orientadoras" icon="🧭" progress emphasize />
+      )}
+    </div>
   );
 }
 
@@ -1476,6 +1443,7 @@ const STEPS: StepDef[] = [
   { id: "session_start",      action: "Iniciar a sessão",                     head: "Pré-atividades" },
   { id: "registration_open",  action: "Iniciar o registro",                   head: "Registro de Presença" },
   { id: "registration_close", action: "Encerrar o registro",                  head: "Registro de Presença" },
+  { id: "synopsis",           action: "Revisitar a situação-problema",        head: "Situação-problema" },
   { id: "groups",             action: "Divisão em grupos",                    head: "Aquecimento" },
   { id: "plenary",            action: "Discussão em plenária",                head: "Aquecimento" },
   { id: "question",           action: "Questão para reflexão",                head: "Plenária" },
@@ -1655,10 +1623,10 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   );
 }
 
-/** Cascata das DIMENSÕES de risco (etapa "Análise situacional"). Vêm do conjunto
- *  escolhido na criação da sala (`risk_dimensions`, sem depender de aluno); fallback
- *  para o /risk-chart em salas antigas. Usa o MESMO componente/CSS/animação das
- *  questões da plenária (QuestionCascade com progress + emphasize). */
+/** Cascata dos RISCOS a avaliar (etapa "Análise situacional"). Vêm do roteiro do
+ *  episódio; em salas antigas, das dimensões escolhidas na criação — e, na falta das
+ *  duas, do /risk-chart. Usa o MESMO componente/CSS/animação das questões da
+ *  plenária (QuestionCascade com progress + emphasize). */
 function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: string[] }) {
   const sdk = useSDK();
   const [fetched, setFetched] = useState<string[]>([]);
@@ -1678,7 +1646,7 @@ function RiskDimensions({ roomId, dims: roomDims }: { roomId: string; dims?: str
   return dims.length ? (
     // Mesma animação/CSS das questões da plenária: mesmo componente e mesmas flags
     // (progress + emphasize) → cards idênticos, com dots e realce do último.
-    <QuestionCascade items={dims} total={dims.length} label="Dimensões de risco" icon="🎯" progress emphasize />
+    <QuestionCascade items={dims} total={dims.length} label="Principais riscos" icon="🎯" progress emphasize />
   ) : (
     <div className="vr-pbl-question">
       <div className="vr-pbl-question-waiting">Carregando dimensões de risco…</div>
@@ -1856,19 +1824,6 @@ function useFittedCols(count: number) {
 /** Grade dos ALUNOS (área principal, à direita) com borda de status:
  *  🟢 dentro do pacote · 🔴 fora · badge ✓ = registrou presença com o class-code.
  *  O facilitador e o código ficam no header do painel (PblPanelHeader). */
-/** Aluno: apresentação transmitida pelo facilitador (screen-share) na coluna
- *  esquerda — mesma posição do iframe do host. Some quando não há transmissão. */
-function StudentPresentation() {
-  const tracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }], { onlySubscribed: false });
-  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal);
-  if (!screen) return null;
-  return (
-    <div className="vr-pbl-present-big">
-      <ParticipantTile trackRef={screen} className="vr-present-share" />
-    </div>
-  );
-}
-
 function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideScreen }: { roster: any | null; localIsStaff: boolean; localIdentity?: string; strip?: boolean; sideScreen?: boolean }) {
   const tracks = useTracks(
     [{ source: Track.Source.Camera, withPlaceholder: true }, { source: Track.Source.ScreenShare, withPlaceholder: false }],

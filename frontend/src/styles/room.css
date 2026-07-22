@@ -980,7 +980,39 @@
   flex: 1; min-width: 0; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
   background: #fff; box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
 }
-.vr-present-iframe { width: 100%; height: 100%; border: none; display: block; background: #fff; }
+/* ── Telas do Roteiro da Videoconferência ──────────────────────────────────────
+   O conteúdo do encontro é renderizado aqui (antes vinha do pacote SCORM embutido).
+   Rola quando o texto é longo; facilitador e aluno usam exatamente o mesmo estilo. */
+.vr-rot {
+  width: 100%; height: 100%; overflow: auto; box-sizing: border-box;
+  padding: 18px 20px; background: #fff; color: #0f172a;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.vr-rot-bloco { font-size: 15px; line-height: 1.6; }
+.vr-rot-bloco p { margin: 0 0 8px; }
+.vr-rot-bloco p:last-child { margin-bottom: 0; }
+.vr-rot-bloco-tit { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0f172a; }
+.vr-rot-bloco-ul { margin: 0; padding-left: 22px; }
+.vr-rot-bloco-ul li { margin-bottom: 4px; }
+/* "Relembrando o episódio": card único de destaque, o foco da tela da plenária. */
+.vr-rot-destaque {
+  border-left: 4px solid var(--vr-accent, #2563eb); background: #f8fafc;
+  border-radius: 10px; padding: 14px 16px; font-size: 16px; line-height: 1.6;
+}
+
+/* Abertura: vinheta da série, centralizada e sem texto corrido. */
+.vr-rot-abertura {
+  align-items: center; justify-content: center; text-align: center; gap: 10px;
+}
+.vr-rot-marca { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+.vr-rot-serie { font-size: 17px; color: #334155; }
+.vr-rot-titulo { font-size: 30px; font-weight: 800; line-height: 1.25; max-width: 22ch; }
+.vr-rot-direitos { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+
+@media (max-width: 860px) {
+  .vr-rot { padding: 14px; gap: 12px; }
+  .vr-rot-titulo { font-size: 22px; }
+}
 
 /* Plenária: overlay NATIVO com as questões de reflexão em cascata. Estilo MINIMALISTA:
    segue o fundo da webconf (mesmos tokens do tema → white-label) em vez de um slide

@@ -101,12 +101,30 @@ export interface OpenPblClass {
   stage?: OpenPblStage;            // sequenciamento do ▶
 }
 
+/**
+ * Roteiro da Videoconferência do episódio, congelado na criação da sala.
+ *
+ * É o CONTEÚDO do encontro — sinopse, questões e riscos — que a sala renderiza
+ * nativamente (antes vinha do pacote SCORM de apresentação). Montado pelo
+ * CustomerApp a partir de `roteiro/schema.ts` + do que foi preenchido no modal de
+ * gerenciar produção; aqui só é lido.
+ */
+export interface RoteiroBlocoFixo { titulo?: string; paragrafos: string[]; lista?: boolean }
+export interface RoteiroSnapshot {
+  episodio?: { id?: string; titulo?: string };
+  /** Campos variáveis por nome (ver schema.ts): texto ou lista de textos. */
+  campos?: Record<string, string | string[]>;
+  /** Textos fixos por seção, na ordem do roteiro. */
+  secoes?: Array<{ key: string; titulo: string; blocosFixos: RoteiroBlocoFixo[] }>;
+}
+
 /** Etapas do sequenciador do facilitador (espelham "ETAPAS E ATIVIDADES DO ENCONTRO"). */
 export type OpenPblStage =
   | "session_start"       // Iniciar a sessão
   | "registration_open"   // Iniciar o registro
   | "amplify_code"        // Amplia código da sessão
   | "registration_close"  // Encerrar o registro
+  | "synopsis"            // Revisitando a situação-problema (sinopse do episódio)
   | "groups"              // Divisão em grupos
   | "plenary"             // Discussão em plenária
   | "question"            // Questão para reflexão (×5)
@@ -172,6 +190,7 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
           lobby_timer_seconds?: number; lobby_bg_video?: string | null; lobby_auto_admit?: boolean;
           class_package_url?: string | null; created_at?: string | null;
           risk_dimensions?: string[] | null;
+          roteiro?: RoteiroSnapshot | null;
         }>(`/api/rooms/${id}/public`),
       create: (body: Partial<Room>) =>
         call<Room>("/api/rooms", { method: "POST", body: JSON.stringify(body) }),

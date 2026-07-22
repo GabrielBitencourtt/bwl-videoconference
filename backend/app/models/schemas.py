@@ -25,6 +25,10 @@ class RoomCreate(BaseModel):
     openpbl_dimensions_id: Optional[str] = None  # aula OpenPBL: dimensionsId p/ o gráfico de riscos
     class_package_url: Optional[str] = None      # URL do Pacote de Classe → QR code p/ os alunos
     risk_dimensions: Optional[list[str]] = None   # nomes das dimensões de risco (cascata na Análise situacional)
+    episode_id: Optional[str] = None              # episódio do encontro (CoreService)
+    # Retrato do Roteiro da Videoconferência do episódio, montado pelo CustomerApp na
+    # criação da sala. Cada campo é texto ou lista de textos (ver roteiro/schema.ts).
+    roteiro: Optional[dict[str, object]] = None
 
 
 class RoomOut(BaseModel):
@@ -56,6 +60,8 @@ class RoomOut(BaseModel):
     openpbl_dimensions_id: Optional[str] = None
     class_package_url: Optional[str] = None
     risk_dimensions: Optional[list[str]] = None
+    episode_id: Optional[str] = None
+    roteiro: Optional[dict[str, object]] = None
     scheduled_at: Optional[datetime]
     ended_at: Optional[datetime]
     created_at: datetime
