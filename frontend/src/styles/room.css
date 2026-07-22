@@ -1057,22 +1057,26 @@ button.vr-seq-label:disabled { opacity: .6; cursor: default; }
 /* Cada bloco do roteiro é um card — mesma superfície/borda/raio do .vr-pbl-qcard das
    questões da plenária, para as duas telas lerem como um sistema só. */
 .vr-rot-bloco {
-  font-size: 15px; line-height: 1.6; color: var(--vr-text);
+  font-size: clamp(13px, 2.9cqi, 18px); line-height: 1.55; color: var(--vr-text);
   background: var(--vr-surface); border: 1px solid var(--vr-border);
   border-radius: var(--vr-radius); padding: 14px 18px;
 }
 .vr-rot-bloco p { margin: 0 0 8px; }
 .vr-rot-bloco p:last-child { margin-bottom: 0; }
-.vr-rot-bloco-tit { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: var(--vr-text); }
+.vr-rot-bloco-tit { font-weight: 700; font-size: clamp(13px, 3cqi, 18px); margin-bottom: 6px; color: var(--vr-text); }
 .vr-rot-bloco-ul { margin: 0; padding-left: 22px; }
 .vr-rot-bloco-ul li { margin-bottom: 4px; }
+/* Conteúdo variável do roteiro com cabeçalho próprio (ex.: "Relembrando o episódio"),
+   no mesmo formato das cascatas. */
+.vr-rot-bloco-var { display: flex; flex-direction: column; gap: 8px; }
+
 /* "Relembrando o episódio": card único de destaque, o foco da tela da plenária. Usa o
    mesmo realce do card mais recente da cascata (.vr-pbl-qcard[data-latest]). */
 .vr-rot-destaque {
   border: 1px solid var(--brand-accent); border-left-width: 4px;
   background: var(--vr-surface-2); color: var(--vr-text);
   box-shadow: 0 10px 26px -12px rgba(0, 0, 0, .7);
-  border-radius: var(--vr-radius); padding: 14px 16px; font-size: 16px; line-height: 1.6;
+  border-radius: var(--vr-radius); padding: 14px 16px; font-size: clamp(14px, 3.2cqi, 20px); line-height: 1.55;
 }
 
 /* Título da seção do roteiro. Só a tela do Feedback da interação usa: lá a seção é a

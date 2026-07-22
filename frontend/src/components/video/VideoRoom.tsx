@@ -1229,7 +1229,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                      label="Questão para reflexão" progress emphasize
+                      label="Questões para reflexão" progress emphasize
                       intro={rIntroQuestoes(roteiro)} />
                   ) : (
                     <div className="vr-pbl-question">
@@ -1259,7 +1259,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               plenaryQ?.list?.length ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                    label="Questão para reflexão" progress emphasize
+                    label="Questões para reflexão" progress emphasize
                     intro={rIntroQuestoes(roteiro)} />
                 </div>
               ) : null
@@ -1575,7 +1575,16 @@ function RoteiroStage({ stage, roteiro, shown = 1 }: {
       {/* Na abertura os blocos fixos são as instruções de registro de presença —
           é o que o participante precisa ler para entrar com o class code. */}
       {!!blocos.length && <RoteiroBlocos blocos={blocos} />}
-      {relembrando && <div className="vr-rot-destaque">{relembrando}</div>}
+      {relembrando && (
+        // Mesmo cabeçalho das cascatas, para o conteúdo variável ficar identificado
+        // como os demais (o card sozinho não dizia o que era).
+        <div className="vr-rot-bloco-var">
+          <div className="vr-pbl-qhead">
+            <span className="vr-pbl-qhead-label">Relembrando o episódio</span>
+          </div>
+          <div className="vr-rot-destaque">{relembrando}</div>
+        </div>
+      )}
       {sinopse.length > 0 && (
         <QuestionCascade items={sinopse} total={sinopseTodas.length}
           label="Revisitando a situação-problema" progress emphasize inline />
@@ -1603,7 +1612,7 @@ const STEPS: StepDef[] = [
   // INTEGRADA"). Em plenary/question a tela mostra a seção "Discussão em Plenária" —
   // antes o rótulo dizia "Aquecimento"/"Plenária" e não batia com o texto exibido.
   { id: "plenary",            action: "Discussão em plenária",                head: "Discussão em Plenária" },
-  { id: "question",           action: "Questão para reflexão",                head: "Discussão em Plenária" },
+  { id: "question",           action: "Questões para reflexão",                head: "Discussão em Plenária" },
   { id: "situational",        action: "Análise situacional",                  head: "Análise situacional" },
   { id: "release_risks",      action: "Liberar análise individual de riscos", head: "Análise situacional" },
   { id: "show_chart",         action: "Mostrar gráfico",                      head: "Análise situacional" },
