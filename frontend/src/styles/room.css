@@ -1054,16 +1054,7 @@ button.vr-seq-label:disabled { opacity: .6; cursor: default; }
    (ficavam pequenas, com a sinopse cortada no meio da frase). Manter flex e reservar
    a faixa deixa a cascata do roteiro IDÊNTICA à da plenária. */
 .vr-rot:not(.vr-rot-abertura) { padding-top: calc(var(--vr-cam-h) + 18px); }
-/* Cada bloco do roteiro é um card — mesma superfície/borda/raio do .vr-pbl-qcard das
-   questões da plenária, para as duas telas lerem como um sistema só. */
-.vr-rot-bloco {
-  font-size: clamp(13px, 2.9cqi, 18px); line-height: 1.55; color: var(--vr-text);
-  background: var(--vr-surface); border: 1px solid var(--vr-border);
-  border-radius: var(--vr-radius); padding: 14px 18px;
-}
-.vr-rot-bloco p { margin: 0 0 8px; }
-.vr-rot-bloco p:last-child { margin-bottom: 0; }
-.vr-rot-bloco-tit { font-weight: 700; font-size: clamp(13px, 3cqi, 18px); margin-bottom: 6px; color: var(--vr-text); }
+/* Listas com marcador dentro de um bloco fixo (o bloco em si usa .vr-pbl-intro). */
 .vr-rot-bloco-ul { margin: 0; padding-left: 22px; }
 .vr-rot-bloco-ul li { margin-bottom: 4px; }
 /* Conteúdo variável do roteiro com cabeçalho próprio (ex.: "Relembrando o episódio"),
@@ -1165,11 +1156,11 @@ button.vr-seq-label:disabled { opacity: .6; cursor: default; }
    a questão. `flex: none` para não roubar altura dos cards, que dividem o resto. */
 .vr-pbl-intro {
   flex: none;
-  padding: clamp(8px, 1.1vh, 13px) clamp(14px, 1.6vw, 22px);
+  padding: clamp(8px, 1.4cqh, 14px) clamp(14px, 3cqi, 22px);
   border-radius: var(--vr-radius);
   background: var(--vr-surface); border: 1px solid var(--vr-border);
   color: var(--vr-text-dim);
-  font-size: clamp(12px, 1.05vw, 14px); line-height: 1.55;
+  font-size: clamp(12px, 2.5cqi, 16px); line-height: 1.55;
 }
 .vr-pbl-intro p { margin: 0; }
 .vr-pbl-intro p + p { margin-top: 5px; }

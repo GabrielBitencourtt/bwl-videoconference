@@ -1229,8 +1229,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   {revealedQuestions.length ? (
                     <QuestionCascade items={revealedQuestions} total={plenaryTotal}
-                      label="Questões para reflexão" progress emphasize
-                      intro={rIntroQuestoes(roteiro)} />
+                      label="Questões para reflexão" progress emphasize />
                   ) : (
                     <div className="vr-pbl-question">
                       <div className="vr-pbl-question-waiting">
@@ -1259,8 +1258,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
               plenaryQ?.list?.length ? (
                 <div className="vr-pbl-present-big" {...bannerProps}>
                   <QuestionCascade items={plenaryQ.list} total={plenaryQ.total}
-                    label="Questões para reflexão" progress emphasize
-                    intro={rIntroQuestoes(roteiro)} />
+                    label="Questões para reflexão" progress emphasize />
                 </div>
               ) : null
             ) : chartForStaff ? (
@@ -1460,21 +1458,15 @@ function rTitulo(r: RoteiroSnapshot | null, key: string): string {
   return r?.secoes?.find((s) => s.key === key)?.titulo ?? "";
 }
 
-/** Introdução às questões da plenária: no roteiro, o bloco que explica a DINÂMICA das
- *  questões ("Cada questão deverá ser dirigida à um participante…") vem depois do bloco
- *  de objetivo da seção. É esse texto que abre a etapa das questões — as questões em si
- *  não mudam. Salas sem roteiro (ou com um único bloco) simplesmente não têm intro. */
-function rIntroQuestoes(r: RoteiroSnapshot | null): RoteiroBlocoFixo[] {
-  return rBlocos(r, "plenaria").slice(1);
-}
-
 /** Blocos de texto fixo de uma seção — o "corpo" da tela de cada etapa. */
 function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
   return (
     <>
       {blocos.map((b, i) => (
-        <div className="vr-rot-bloco" key={i}>
-          {b.titulo && <div className="vr-rot-bloco-tit">{b.titulo}</div>}
+        // `vr-pbl-intro` = instrução do sistema: mesmo cartão discreto usado acima das
+        // cascatas. O texto fixo situa a atividade; o destaque é do conteúdo variável.
+        <div className="vr-pbl-intro" key={i}>
+          {b.titulo && <strong>{b.titulo}</strong>}
           {b.lista ? (
             <ul className="vr-rot-bloco-ul">
               {b.paragrafos.map((t, k) => <li key={k}>{t}</li>)}
@@ -1485,22 +1477,6 @@ function RoteiroBlocos({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
         </div>
       ))}
     </>
-  );
-}
-
-/** Intro curta acima de uma cascata (questões da plenária). Mesmo texto do roteiro,
- *  em peso menor: quem manda na tela é a questão, a intro só situa a dinâmica. */
-function RoteiroIntro({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
-  if (!blocos.length) return null;
-  return (
-    <div className="vr-pbl-intro">
-      {blocos.map((b, i) => (
-        <div key={i}>
-          {b.titulo && <strong>{b.titulo}</strong>}
-          {b.paragrafos.map((t, k) => <p key={k}>{t}</p>)}
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -1767,7 +1743,7 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
  *  MESMO componente (o aluno recebe a lista por dados), então a UI/animação fica num
  *  só lugar. `progress` mostra os passos (●) no cabeçalho e `emphasize` realça o card
  *  mais recente — ambos fazem sentido só na revelação progressiva (plenária). */
-function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false, intro }: {
+function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false }: {
   items: string[];
   total?: number;
   label?: string;
@@ -1778,7 +1754,6 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
   inline?: boolean;
   /** Texto do roteiro que ABRE a etapa, acima da cascata (a plenária usa a dinâmica
    *  das questões). Slot opcional — as questões em si não mudam. */
-  intro?: RoteiroBlocoFixo[];
 }) {
   const count = items.length;
   const tot = Math.max(total ?? count, count, 1);
@@ -1798,7 +1773,6 @@ function QuestionCascade({ items, total, label, icon, progress = false, emphasiz
           )}
         </div>
       )}
-      {!!intro?.length && <RoteiroIntro blocos={intro} />}
       {/* --vr-qn: quantos cards a etapa terá. O CSS usa para dividir a altura
           disponível e escolher o tamanho de fonte que ainda cabe. */}
       <div className="vr-pbl-qcascade" data-emphasize={emphasize ? "1" : undefined}
