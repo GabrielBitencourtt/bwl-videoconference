@@ -746,12 +746,21 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const toggleChartSeries = (name: string) =>
     setChartFilter((f) => (f.includes(name) ? f.filter((x) => x !== name) : [...f, name]));
   const [stageBusy, setStageBusy] = useState(false);
-  const [qCount, setQCount] = useState(0);   // questões da plenária já reveladas
+  // Cards já revelados na etapa atual. Vale para toda cascata que aparece um a um
+  // (sinopse, questões orientadoras e questões da plenária).
+  const [reveal, setReveal] = useState(0);
+  // Espelho do que o controlador revelou — é assim que aluno e moderador acompanham.
+  const [remoteReveal, setRemoteReveal] = useState<{ stage: string; count: number } | null>(null);
 
   // ── Conteúdo do encontro, lido do roteiro do episódio ──
   // Memoizado: `rLista` devolve um array novo a cada chamada e estas listas entram em
   // dependências de efeito (o heartbeat das questões reiniciaria a cada render).
   const roteiroQuestions = useMemo(() => rLista(roteiro, "questoesPlenaria"), [roteiro]);
+  const roteiroSinopse = useMemo(
+    () => [rTexto(roteiro, "sinopseParte1"), rTexto(roteiro, "sinopseParte2")].filter(Boolean),
+    [roteiro],
+  );
+  const roteiroOrientadoras = useMemo(() => rLista(roteiro, "questoesOrientadoras"), [roteiro]);
   // Riscos a avaliar na Análise situacional. Vêm do roteiro; salas antigas (sem roteiro)
   // ainda caem nas dimensões do conjunto escolhido na criação.
   // Banner de fundo da apresentacao (roteiro do episodio). Chega ja como URL assinada:
@@ -823,6 +832,12 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             return { list, total };
           });
         }
+        // Quantos cards da etapa atual o facilitador já revelou (dedupe: reenviado a cada 3s).
+        if (m?.source === "webconf" && m?.type === "stage-reveal" && typeof m.count === "number") {
+          const next = { stage: String(m.stage || ""), count: Math.max(1, m.count) };
+          setRemoteReveal((prev) =>
+            prev && prev.stage === next.stage && prev.count === next.count ? prev : next);
+        }
         // Filtro do gráfico aplicado pelo facilitador → replica aqui (dedupe: reenviado a cada 3s).
         if (m?.source === "webconf" && m?.type === "chart-filter" && Array.isArray(m.hidden)) {
           const h: string[] = m.hidden.map(String);
@@ -846,8 +861,8 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     });
   }, [scorm, roomId]);
 
-  // Reset do contador de questões ao sair da etapa de plenária.
-  useEffect(() => { if (pblStage !== "question") setQCount(0); }, [pblStage]);
+  // Toda troca de etapa recomeça a revelação do zero.
+  useEffect(() => { setReveal(0); }, [pblStage]);
 
   const goToStep = async (id: OpenPblStage) => {
     try { setPblClass(await sdk.openpbl.setStage(roomId, id)); } catch { /* */ }
@@ -857,9 +872,19 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // vale só para salas sem roteiro).
   const plenaryTotal = roteiroQuestions.length || PLENARY_QUESTIONS;
 
+  // Cards da etapa atual que aparecem um a um.
+  const revealItems = pblStage === "synopsis" ? roteiroSinopse
+    : pblStage === "groups" ? roteiroOrientadoras
+      : pblStage === "question" ? roteiroQuestions
+        : [];
+  // Quem conduz usa o próprio contador; os demais seguem o que ele transmite.
+  const shownCount = amController
+    ? reveal + 1
+    : (remoteReveal?.stage === pblStage ? remoteReveal.count : 1);
+
   // Rótulo do botão sequencial (▶) — na plenária mostra a contagem de questões.
-  const seqLabel = pblStage === "question"
-    ? `Questão para reflexão (${Math.min(qCount + 1, plenaryTotal)}/${plenaryTotal})`
+  const seqLabel = revealItems.length > 1
+    ? `${curStep.action} (${Math.min(reveal + 1, revealItems.length)}/${revealItems.length})`
     : curStep.action;
 
   // Class-code só é liberado (mostrado ao facilitador) DEPOIS de clicar em "Iniciar o
@@ -881,7 +906,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   }, []);
 
   // Questões REVELADAS até agora (cascata): do roteiro do episódio, da 1ª até a atual.
-  const revealedQuestions = pblStage === "question" ? roteiroQuestions.slice(0, qCount + 1) : [];
+  const revealedQuestions = pblStage === "question" ? roteiroQuestions.slice(0, reveal + 1) : [];
 
   // O controlador transmite as questões já reveladas: o aluno renderiza a MESMA cascata.
   // Reenvia a cada 3s enquanto na etapa, para quem entrar depois. Fora da etapa, envia
@@ -894,7 +919,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       // "PC manager is closed" (durante reconexão) e polui o console de erros.
       if (room.state !== ConnectionState.Connected) return;
       try {
-        const list = inQ ? roteiroQuestions.slice(0, qCount + 1) : [];
+        const list = inQ ? roteiroQuestions.slice(0, reveal + 1) : [];
         const data = new TextEncoder().encode(JSON.stringify({
           source: "webconf", type: "plenary-questions", list, total: plenaryTotal,
         }));
@@ -905,7 +930,26 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
     if (!inQ) return;
     const id = setInterval(send, 3000);
     return () => clearInterval(id);
-  }, [amController, room, pblStage, qCount, roteiroQuestions, plenaryTotal]);
+  }, [amController, room, pblStage, reveal, roteiroQuestions, plenaryTotal]);
+
+  // Progresso da revelação: o controlador transmite quantos cards já apareceram, para
+  // aluno e moderador verem exatamente a mesma tela. Reenvia a cada 3s (quem entra no
+  // meio da etapa pega o estado atual).
+  useEffect(() => {
+    if (!amController || !room || revealItems.length < 2) return;
+    const send = () => {
+      if (room.state !== ConnectionState.Connected) return;
+      try {
+        const data = new TextEncoder().encode(JSON.stringify({
+          source: "webconf", type: "stage-reveal", stage: pblStage, count: reveal + 1,
+        }));
+        room.localParticipant?.publishData(data, { reliable: true })?.catch(() => {});
+      } catch { /* */ }
+    };
+    send();
+    const id = setInterval(send, 3000);
+    return () => clearInterval(id);
+  }, [amController, room, pblStage, reveal, revealItems.length]);
 
   // Filtro do gráfico: o controlador transmite as séries ocultas → o gráfico do aluno
   // fica sincronizado. Reenvia a cada 3s enquanto o gráfico está no ar (quem entra
@@ -950,11 +994,14 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           await goToStep(next);
           break;
         case "synopsis":
-          // Revisitando a situação-problema: os dois cards da sinopse ficam na tela até
-          // o facilitador seguir para o aquecimento.
+          // Sinopse revelada card a card; só depois do último segue para o aquecimento.
+          if (reveal + 1 < roteiroSinopse.length) { setReveal(reveal + 1); break; }
           await goToStep(next);
           break;
         case "groups":
+          // As questões orientadoras aparecem uma a uma ANTES de dividir os grupos —
+          // é com elas em tela que a turma vai discutir nas salas.
+          if (reveal + 1 < roteiroOrientadoras.length) { setReveal(reveal + 1); break; }
           // Divide os grupos (API OpenPBL) e abre as salas com contagem de 10 min.
           await sdk.openpbl.syncGroups(roomId).catch(() => {});
           await sdk.breakouts.open(roomId, 600).catch(() => {});
@@ -970,9 +1017,9 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           // revelada é transmitida por dados para os alunos verem a mesma tela.
           // 1ª questão: inicia a gravação em BACKGROUND (o egress pode demorar a responder;
           // NÃO pode bloquear o avanço do sequenciador — era isso que travava o botão).
-          if (qCount === 0 && !recording) { setRecording(true); sdk.recording.start(roomId).catch(() => setRecording(false)); }
-          const n = qCount + 1;
-          setQCount(n);
+          if (reveal === 0 && !recording) { setRecording(true); sdk.recording.start(roomId).catch(() => setRecording(false)); }
+          const n = reveal + 1;
+          setReveal(n);
           if (n >= plenaryTotal) await goToStep("situational");
           break;
         }
@@ -1150,7 +1197,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 </div>
               ) : (
                 // Demais etapas: a tela do roteiro correspondente.
-                <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+                <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} shown={shownCount} /></div>
               )
             ) : chartForStudents ? (
               // "Mostrar gráfico" em diante: o aluno também vê o gráfico — segue o filtro
@@ -1174,10 +1221,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             ) : chartForStaff ? (
               // release_risks (antes de "Mostrar gráfico"): o aluno está respondendo no
               // celular — mostra as instruções da Análise situacional, não o gráfico.
-              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} shown={shownCount} /></div>
             ) : (
               // Demais etapas: o aluno vê exatamente a mesma tela do facilitador.
-              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
+              <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} shown={shownCount} /></div>
             )}
           </aside>
         )}
@@ -1415,7 +1462,11 @@ function RoteiroIntro({ blocos }: { blocos: RoteiroBlocoFixo[] }) {
 /** Tela de uma etapa do roteiro: título da seção + textos fixos + o conteúdo
  *  variável que aquela etapa pede. As etapas com cascata (plenária e análise
  *  situacional) e o gráfico são tratados fora daqui. */
-function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: RoteiroSnapshot | null }) {
+function RoteiroStage({ stage, roteiro, shown = 1 }: {
+  stage: OpenPblStage; roteiro: RoteiroSnapshot | null;
+  /** Quantos cards da cascata já foram revelados nesta etapa. */
+  shown?: number;
+}) {
   if (!roteiro) {
     return (
       <div className="vr-pbl-question">
@@ -1465,10 +1516,13 @@ function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: Roteir
   const blocos = rBlocos(roteiro, secao);
 
   // Conteúdo variável por etapa.
-  const sinopse = stage === "synopsis"
+  // Cascatas aparecem card a card, conforme o facilitador avança (`shown`).
+  const sinopseTodas = stage === "synopsis"
     ? [rTexto(roteiro, "sinopseParte1"), rTexto(roteiro, "sinopseParte2")].filter(Boolean)
     : [];
-  const orientadoras = stage === "groups" ? rLista(roteiro, "questoesOrientadoras") : [];
+  const sinopse = sinopseTodas.slice(0, shown);
+  const orientadorasTodas = stage === "groups" ? rLista(roteiro, "questoesOrientadoras") : [];
+  const orientadoras = orientadorasTodas.slice(0, shown);
   const relembrando = stage === "plenary" ? rTexto(roteiro, "relembrandoEpisodio") : "";
 
   return (
@@ -1478,11 +1532,11 @@ function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: Roteir
       {!!blocos.length && <RoteiroBlocos blocos={blocos} />}
       {relembrando && <div className="vr-rot-destaque">{relembrando}</div>}
       {sinopse.length > 0 && (
-        <QuestionCascade items={sinopse} total={sinopse.length}
+        <QuestionCascade items={sinopse} total={sinopseTodas.length}
           label="Revisitando a situação-problema" progress emphasize inline />
       )}
       {orientadoras.length > 0 && (
-        <QuestionCascade items={orientadoras} total={orientadoras.length}
+        <QuestionCascade items={orientadoras} total={orientadorasTodas.length}
           label="Questões orientadoras" progress emphasize inline />
       )}
     </div>
