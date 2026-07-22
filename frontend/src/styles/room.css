@@ -793,9 +793,7 @@
   .vr-pbl-side .vr-pbl-present-big { flex: none; min-height: 54vh; }
   /* Sem PiP aqui: a câmera não cobre nada, então o vão reservado para ela some
      (senão sobraria um buraco no topo e um recuo inútil no texto). */
-  :root { --vr-cam-w: 0px; --vr-cam-h: 0px; }
-  .vr-rot:not(.vr-rot-abertura)::before { display: none; }
-  .vr-pbl-question:not([data-inline]) { padding-top: clamp(14px, 2.2vh, 26px); }
+  :root { --vr-cam-h: 0px; }   /* zera a reserva: o padding volta aos 18px de base */
 }
 
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
@@ -1028,26 +1026,18 @@
    (ver `.vr-pbl-side .vr-pbl-head`). Precisa acompanhar aquelas medidas: é o que
    impede o texto de ficar embaixo da webcam. */
 :root {
-  --vr-cam-w: clamp(160px, 26%, 240px);   /* usado em contexto de LARGURA (o % bate) */
-  /* Altura fixa de propósito: em contexto de altura, `26%` resolveria contra a ALTURA
-     do container e daria um valor sem relação com a câmera. 240px (teto do clamp) em
-     16/9 = 135px, mais os 12px do `top` — cobre o pior caso. */
+  /* Altura fixa de propósito: `26%` (a largura da câmera) resolveria, em contexto de
+     altura, contra a ALTURA do container — um valor sem relação com a webcam.
+     240px (teto do clamp da largura) em 16/9 = 135px, mais os 12px do `top`. */
   --vr-cam-h: 147px;
 }
 
-/* Telas de texto usam layout de bloco com um vão flutuante no canto: o texto
-   CONTORNA a câmera em vez de ser empurrado para baixo dela — assim nada fica
-   coberto e não se perde uma faixa inteira de altura. A abertura é centralizada
-   e continua em flex (o canto superior esquerdo dela é vazio). */
-.vr-rot:not(.vr-rot-abertura) { display: block; }
-.vr-rot:not(.vr-rot-abertura) > * + * { margin-top: 14px; }
-.vr-rot:not(.vr-rot-abertura)::before {
-  content: ""; float: left;
-  /* Folga extra: o % da câmera é sobre a coluna inteira, e aqui sobre a área já
-     descontada do padding do texto — sem a margem o recuo ficaria curto. */
-  width: calc(var(--vr-cam-w) + 24px);
-  height: var(--vr-cam-h);
-}
+/* O conteúdo começa ABAIXO da faixa da câmera. Cheguei a fazer o texto contornar a
+   webcam com um vão flutuante, o que poupava altura — mas exigia layout de bloco, e
+   aí as cascatas de dentro do roteiro perdiam a divisão de altura entre os cards
+   (ficavam pequenas, com a sinopse cortada no meio da frase). Manter flex e reservar
+   a faixa deixa a cascata do roteiro IDÊNTICA à da plenária. */
+.vr-rot:not(.vr-rot-abertura) { padding-top: calc(var(--vr-cam-h) + 18px); }
 /* Cada bloco do roteiro é um card — mesma superfície/borda/raio do .vr-pbl-qcard das
    questões da plenária, para as duas telas lerem como um sistema só. */
 .vr-rot-bloco {
@@ -1117,12 +1107,14 @@
   position: static; inset: auto; z-index: auto;
   padding: 0; background: none; color: inherit;
 }
-/* Em tela cheia os cards DIVIDEM a altura (`flex: 1 1 0`). Inline isso os colapsava:
-   dentro de um container de altura automática, base 0 + grow resolve para zero, e o
-   `overflow: hidden` cortava a sinopse/as questões orientadoras no meio da frase.
-   Inline o texto manda na altura. */
-.vr-pbl-question[data-inline] .vr-pbl-qcascade { flex: none; }
-.vr-pbl-question[data-inline] .vr-pbl-qcard { flex: none; overflow: visible; }
+/* Inline a cascata OCUPA a área que sobra da tela do roteiro — é isso que faz os
+   cards dividirem a altura (`flex: 1 1 0`) exatamente como na plenária. Sem o grow,
+   dentro de um container de altura automática a base 0 resolve para zero e os cards
+   colapsam, cortando o texto no meio da frase. */
+.vr-pbl-question[data-inline] { flex: 1 1 auto; min-height: 0; }
+/* A sinopse é bem mais longa que uma questão de plenária: com o card alto, 4 linhas
+   ainda cortariam a frase. */
+.vr-pbl-question[data-inline] .vr-pbl-qcard-text { -webkit-line-clamp: 9; }
 
 /* Cabeçalho minimalista: rótulo discreto à esquerda; progresso (●) à direita. */
 .vr-pbl-qhead {
@@ -1131,7 +1123,7 @@
 /* Cascata em tela cheia (plenária/riscos): começa ABAIXO da câmera. Os cards esticam
    na largura toda e dividem a altura entre si, então recuar só o cabeçalho não
    bastaria — o 1º card ainda cairia atrás da webcam. */
-.vr-pbl-question:not([data-inline]) { padding-top: calc(var(--vr-cam-h) + 8px); }
+.vr-pbl-question:not([data-inline]) { padding-top: calc(var(--vr-cam-h) + clamp(14px, 2.2vh, 26px)); }
 .vr-pbl-qhead-label {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: clamp(11px, 1.05vw, 13px); font-weight: 700;
