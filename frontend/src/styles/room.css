@@ -791,6 +791,11 @@
   }
   .vr-pbl-side .vr-pbl-head-cam { width: 100%; aspect-ratio: 16 / 9; max-height: 30vh; border-radius: 10px; }
   .vr-pbl-side .vr-pbl-present-big { flex: none; min-height: 54vh; }
+  /* Sem PiP aqui: a câmera não cobre nada, então o vão reservado para ela some
+     (senão sobraria um buraco no topo e um recuo inútil no texto). */
+  :root { --vr-cam-w: 0px; --vr-cam-h: 0px; }
+  .vr-rot:not(.vr-rot-abertura)::before { display: none; }
+  .vr-pbl-question:not([data-inline]) { padding-top: clamp(14px, 2.2vh, 26px); }
 }
 
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
@@ -1000,6 +1005,31 @@
   padding: 18px 20px; background: #fff; color: #0f172a;
   display: flex; flex-direction: column; gap: 14px;
 }
+
+/* Espaço ocupado pela câmera do facilitador, que flutua como PiP sobre o conteúdo
+   (ver `.vr-pbl-side .vr-pbl-head`). Precisa acompanhar aquelas medidas: é o que
+   impede o texto de ficar embaixo da webcam. */
+:root {
+  --vr-cam-w: clamp(160px, 26%, 240px);   /* usado em contexto de LARGURA (o % bate) */
+  /* Altura fixa de propósito: em contexto de altura, `26%` resolveria contra a ALTURA
+     do container e daria um valor sem relação com a câmera. 240px (teto do clamp) em
+     16/9 = 135px, mais os 12px do `top` — cobre o pior caso. */
+  --vr-cam-h: 147px;
+}
+
+/* Telas de texto usam layout de bloco com um vão flutuante no canto: o texto
+   CONTORNA a câmera em vez de ser empurrado para baixo dela — assim nada fica
+   coberto e não se perde uma faixa inteira de altura. A abertura é centralizada
+   e continua em flex (o canto superior esquerdo dela é vazio). */
+.vr-rot:not(.vr-rot-abertura) { display: block; }
+.vr-rot:not(.vr-rot-abertura) > * + * { margin-top: 14px; }
+.vr-rot:not(.vr-rot-abertura)::before {
+  content: ""; float: left;
+  /* Folga extra: o % da câmera é sobre a coluna inteira, e aqui sobre a área já
+     descontada do padding do texto — sem a margem o recuo ficaria curto. */
+  width: calc(var(--vr-cam-w) + 24px);
+  height: var(--vr-cam-h);
+}
 .vr-rot-bloco { font-size: 15px; line-height: 1.6; }
 .vr-rot-bloco p { margin: 0 0 8px; }
 .vr-rot-bloco p:last-child { margin-bottom: 0; }
@@ -1041,10 +1071,22 @@
 }
 @keyframes vrOverlayIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* Cascata DENTRO de uma tela do roteiro (sinopse, questões orientadoras): entra no
+   fluxo junto dos textos fixos. Como overlay ela cobriria a tela inteira — inclusive
+   os blocos que deveria acompanhar. O vão da câmera já é reservado por `.vr-rot`. */
+.vr-pbl-question[data-inline] {
+  position: static; inset: auto; z-index: auto;
+  padding: 0; background: none; color: inherit;
+}
+
 /* Cabeçalho minimalista: rótulo discreto à esquerda; progresso (●) à direita. */
 .vr-pbl-qhead {
   flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
+/* Cascata em tela cheia (plenária/riscos): começa ABAIXO da câmera. Os cards esticam
+   na largura toda e dividem a altura entre si, então recuar só o cabeçalho não
+   bastaria — o 1º card ainda cairia atrás da webcam. */
+.vr-pbl-question:not([data-inline]) { padding-top: calc(var(--vr-cam-h) + 8px); }
 .vr-pbl-qhead-label {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: clamp(11px, 1.05vw, 13px); font-weight: 700;

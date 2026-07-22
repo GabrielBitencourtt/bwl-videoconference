@@ -1431,11 +1431,11 @@ function RoteiroStage({ stage, roteiro }: { stage: OpenPblStage; roteiro: Roteir
       {relembrando && <div className="vr-rot-destaque">{relembrando}</div>}
       {sinopse.length > 0 && (
         <QuestionCascade items={sinopse} total={sinopse.length}
-          label="Revisitando a situação-problema" icon="📖" progress emphasize />
+          label="Revisitando a situação-problema" icon="📖" progress emphasize inline />
       )}
       {orientadoras.length > 0 && (
         <QuestionCascade items={orientadoras} total={orientadoras.length}
-          label="Questões orientadoras" icon="🧭" progress emphasize />
+          label="Questões orientadoras" icon="🧭" progress emphasize inline />
       )}
     </div>
   );
@@ -1592,18 +1592,20 @@ function RiskChart({ roomId, canFilter = false, showPending = false, hiddenSerie
  *  MESMO componente (o aluno recebe a lista por dados), então a UI/animação fica num
  *  só lugar. `progress` mostra os passos (●) no cabeçalho e `emphasize` realça o card
  *  mais recente — ambos fazem sentido só na revelação progressiva (plenária). */
-function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false }: {
+function QuestionCascade({ items, total, label, icon, progress = false, emphasize = false, inline = false }: {
   items: string[];
   total?: number;
   label?: string;
   icon?: string;
   progress?: boolean;
   emphasize?: boolean;
+  /** Renderiza no fluxo (dentro de uma tela do roteiro) em vez de cobrir a area. */
+  inline?: boolean;
 }) {
   const count = items.length;
   const tot = Math.max(total ?? count, count, 1);
   return (
-    <div className="vr-pbl-question">
+    <div className="vr-pbl-question" data-inline={inline ? "1" : undefined}>
       {label && (
         <div className="vr-pbl-qhead">
           <span className="vr-pbl-qhead-label">
