@@ -365,14 +365,30 @@ export function createVideoRoomsSDK(opts: SDKOptions) {
      * Returns an unsubscribe function.
      */
     subscribe(roomId: string, onEvent: (event: string, payload: any) => void): () => void {
-      const ws = new WebSocket(`${wsBase}/ws/rooms/${roomId}`);
-      ws.onmessage = (e) => {
-        try {
-          const { event, payload } = JSON.parse(e.data);
-          onEvent(event, payload);
-        } catch {}
+      // Reconecta sozinho: sem isto, qualquer queda do socket (blip de rede, timeout de
+      // conexão ociosa, restart do backend a cada deploy) parava as atualizações em
+      // silêncio — o cliente ficava preso no último estado recebido. Ao (re)conectar,
+      // emite o evento sintético "__reconnected" para o consumidor RE-SINCRONIZAR os
+      // estados que possa ter perdido durante a queda (ex.: a etapa da aula).
+      let ws: WebSocket | null = null;
+      let closed = false;
+      let first = true;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const connect = () => {
+        if (closed) return;
+        ws = new WebSocket(`${wsBase}/ws/rooms/${roomId}`);
+        ws.onopen = () => { if (!first) onEvent("__reconnected", null); first = false; };
+        ws.onmessage = (e) => {
+          try {
+            const { event, payload } = JSON.parse(e.data);
+            onEvent(event, payload);
+          } catch {}
+        };
+        ws.onclose = () => { if (!closed) timer = setTimeout(connect, 2000); };
+        ws.onerror = () => { try { ws?.close(); } catch {} };
       };
-      return () => ws.close();
+      connect();
+      return () => { closed = true; if (timer) clearTimeout(timer); try { ws?.close(); } catch {} };
     },
 
     /**

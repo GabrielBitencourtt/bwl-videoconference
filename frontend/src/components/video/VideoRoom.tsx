@@ -641,9 +641,11 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
     setPinned(r.pinned ?? null);
   };
   useEffect(() => {
-    sdk.roles.get(roomId).then(applyRoles).catch(() => {});
+    const load = () => sdk.roles.get(roomId).then(applyRoles).catch(() => {});
+    load();
     return sdk.subscribe(roomId, (event, payload) => {
       if (event === "roles-updated") applyRoles(payload);
+      else if (event === "__reconnected") load();
     });
   }, [roomId]);
   const setRole = (body: Parameters<typeof sdk.roles.set>[1]) =>
@@ -668,16 +670,21 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
   }, [roomId]);
 
   useEffect(() => {
-    sdk.rooms.get(roomId).then((r) => {
+    let firstLoad = true;
+    const load = () => sdk.rooms.get(roomId).then((r) => {
       setShowBoard(!!r.whiteboard_active);
       setRecording(!!r.recording_enabled);
       // "Gravação" toggle at room creation → auto-start once when the host joins.
-      if (isStaff && !recorder && (r as any).auto_record && !r.recording_enabled) {
+      // Só na 1ª carga (não numa reconexão do WS, senão reiniciaria a gravação).
+      if (firstLoad && isStaff && !recorder && (r as any).auto_record && !r.recording_enabled) {
         setRecording(true);
         sdk.recording.start(roomId).catch(() => setRecording(false));
       }
+      firstLoad = false;
     }).catch(() => {});
+    load();
     return sdk.subscribe(roomId, (event, payload) => {
+      if (event === "__reconnected") load();
       if (event === "whiteboard-toggle") setShowBoard(!!payload.active);
       if (event === "recording-started") setRecording(true);
       if (event === "recording-stopped") setRecording(false);
@@ -744,9 +751,13 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
   const [pblClass, setPblClass] = useState<any | null>(null);
   useEffect(() => {
     if (!scorm) return;
-    sdk.openpbl.classState(roomId).then(setPblClass).catch(() => {});
+    const load = () => sdk.openpbl.classState(roomId).then(setPblClass).catch(() => {});
+    load();
     return sdk.subscribe(roomId, (event, payload) => {
       if (event === "openpbl-class") setPblClass(payload);
+      // WS reconectou (após queda/deploy): re-busca a etapa atual, que pode ter mudado
+      // enquanto o socket estava fora — é isso que evita o aluno travar numa etapa antiga.
+      else if (event === "__reconnected") load();
     });
   }, [scorm, roomId]);
   const rawStage = pblClass?.stage as OpenPblStage;
@@ -898,9 +909,11 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
   const [breakoutOpen, setBreakoutOpen] = useState(false);
   useEffect(() => {
     if (!scorm) return;
-    sdk.breakouts.state(roomId).then((s) => setBreakoutOpen(!!s.open)).catch(() => {});
+    const load = () => sdk.breakouts.state(roomId).then((s) => setBreakoutOpen(!!s.open)).catch(() => {});
+    load();
     return sdk.subscribe(roomId, (event, payload) => {
-      if (event === "breakout-open") setBreakoutOpen(true);
+      if (event === "__reconnected") load();
+      else if (event === "breakout-open") setBreakoutOpen(true);
       else if (event === "breakout-close") setBreakoutOpen(false);
       else if (event === "breakout-state") setBreakoutOpen(!!payload?.open);
     });
