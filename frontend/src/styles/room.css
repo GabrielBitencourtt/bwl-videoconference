@@ -550,15 +550,6 @@
 .vr-modal-btn-danger:hover { background: var(--vr-danger-hover); }
 .vr-modal-btn-primary { background: var(--brand-accent); border: none; color: #fff; }
 .vr-modal-btn-primary:hover { background: var(--brand-accent-hover); }
-.vr-modal-btn:disabled, .vr-modal-btn-primary:disabled { opacity: .6; cursor: default; }
-.vr-modal-err { color: var(--vr-danger); font-size: 13px; margin-top: 2px; }
-
-/* Gravação (egress): a tela capturada do facilitador ocupa todo o vídeo, sem cortar
-   (contain) e sem o badge de nome do track. */
-.vr-rec-fullscreen { position: absolute; inset: 0; width: 100%; height: 100%; }
-.vr-rec-fullscreen .lk-participant-media-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-.vr-rec-fullscreen .lk-participant-metadata,
-.vr-rec-fullscreen .lk-focus-toggle-button { display: none; }
 
 /* Modal do QR code do Pacote de Classe */
 .vr-qr-modal { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
