@@ -1639,7 +1639,7 @@ function RoteiroStage({ stage, roteiro, shown = 1 }: {
  *  (a "atividade atual" exibida). */
 interface StepDef { id: OpenPblStage; action: string; head: string; }
 const STEPS: StepDef[] = [
-  { id: "session_start",      action: "Iniciar a sessão",                     head: "Pré-atividades" },
+  { id: "session_start",      action: "Iniciar a sessão",                     head: "Abertura" },
   { id: "registration_open",  action: "Iniciar o registro",                   head: "Registro de Presença" },
   { id: "registration_close", action: "Encerrar o registro",                  head: "Registro de Presença" },
   { id: "synopsis",           action: "Revisitar a situação-problema",        head: "Situação-problema" },
