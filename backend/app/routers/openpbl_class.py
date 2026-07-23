@@ -86,6 +86,22 @@ def _row_to_state(row) -> dict:
     }
 
 
+def _room_scoped_email(email: str, room_id: str) -> str:
+    """Email exclusivo da sala, usado como IDENTIFICADOR da apresentação no OpenPBL
+    (nada é enviado a ele). Plus-addressing: `nome+r<8hex>@dominio`. Determinístico
+    por sala — a mesma sala sempre gera a mesma chave (código estável durante a
+    sessão), salas diferentes geram chaves diferentes (código novo por aula).
+
+    Se o email já tiver um '+', o local é truncado antes dele para não empilhar tags a
+    cada chamada. Sem '@' (não deveria ocorrer aqui), devolve o email intacto."""
+    short = room_id.replace("-", "")[:8]
+    local, sep, domain = email.partition("@")
+    if not sep:
+        return email
+    local = local.split("+", 1)[0]
+    return f"{local}+r{short}@{domain}"
+
+
 async def _get_class(room_id: str):
     return await pool().fetchrow(
         "SELECT * FROM video_room_openpbl_class WHERE room_id=$1", room_id)
@@ -100,12 +116,20 @@ async def start_class(room_id: str, body: ClassStart, user: CurrentUser = Depend
     if not room:
         raise HTTPException(404, "room not found")
 
-    email = (body.facilitator_email or "").strip() or (user.id if "@" in user.id else "")
-    if not email:
+    real_email = (body.facilitator_email or "").strip() or (user.id if "@" in user.id else "")
+    if not real_email:
         raise HTTPException(400, "facilitator_email é obrigatório (identidade sem e-mail)")
     activity_id = body.activity_id.strip()
     if not activity_id:
         raise HTTPException(400, "activity_id é obrigatório")
+
+    # Class-code POR SALA. O /api/Presentation do OpenPBL reusa o código quando a chave
+    # (activityId, email) se repete dentro de uma janela de horas — então dar duas aulas
+    # do MESMO episódio caía no mesmo código, misturando as turmas. Derivamos um email
+    # exclusivo da sala (o OpenPBL usa o email só como identificador, não envia nada):
+    # sala nova → chave nova → código novo na hora; reabrir a MESMA sala mantém o código
+    # (o id da sala é estável), preservando a sessão em andamento.
+    email = _room_scoped_email(real_email, room_id)
 
     base = settings.openpbl_integration_url.rstrip("/")
     headers = _integration_headers()
@@ -145,6 +169,8 @@ async def start_class(room_id: str, body: ClassStart, user: CurrentUser = Depend
           facilitator_email=EXCLUDED.facilitator_email, facilitator_name=EXCLUDED.facilitator_name,
           checking_open=true, released_dimensions=false, released=false, created_at=now()
         """,
+        # Guarda o email DERIVADO: é ele que identifica esta apresentação no OpenPBL, e
+        # as liberações (release_gate) precisam usar o mesmo. O nome segue o real.
         room_id, activity_id, code, str(ccid), json.dumps(group_codes),
         email, user.name or "")
 
