@@ -102,6 +102,19 @@ def _room_scoped_email(email: str, room_id: str) -> str:
     return f"{local}+r{short}@{domain}"
 
 
+def _facilitator_base_email(scoped: str) -> str:
+    """Recupera o email SEM o sufixo por-sala (`+r<id>`).
+
+    O email derivado tem um '+' e o endpoint de release do ContentBuilder o coloca na
+    URL — onde o '+' quebra o roteamento (404), mesmo URL-encodado. A criação não sofre
+    disso (email vai no corpo JSON). O release é chaveado pelo ccid; o email na path é só
+    roteamento, então usamos a base sem '+'. Salas antigas (sem '+') passam intactas."""
+    local, sep, domain = (scoped or "").partition("@")
+    if not sep:
+        return scoped
+    return f"{local.split('+', 1)[0]}@{domain}"
+
+
 async def _get_class(room_id: str):
     return await pool().fetchrow(
         "SELECT * FROM video_room_openpbl_class WHERE room_id=$1", room_id)
@@ -201,7 +214,9 @@ async def release_gate(room_id: str, body: ClassRelease, user: CurrentUser = Dep
         raise HTTPException(400, "gate deve ser 'risks' ou 'perceptions'")
 
     base = settings.openpbl_integration_url.rstrip("/")
-    email, ccid = row["facilitator_email"], row["class_course_id"]
+    # Email SEM o sufixo por-sala: o '+' do email derivado quebra a URL do release (404).
+    # O que identifica a turma é o ccid; o email na path é só roteamento.
+    email, ccid = _facilitator_base_email(row["facilitator_email"]), row["class_course_id"]
     suffix = "/performance" if body.gate == "risks" else ""
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.post(f"{base}/api/ClassRoom/release/{email}/{ccid}{suffix}",
