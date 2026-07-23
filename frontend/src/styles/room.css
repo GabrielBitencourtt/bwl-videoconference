@@ -116,6 +116,14 @@
   background: rgba(10, 12, 20, .5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, .1); border-radius: 8px; padding: 3px 6px;
 }
+/* Nome do facilitador sobre a câmera: chip compacto de UMA linha, ancorado embaixo e
+   com reticências. A PiP do facilitador é estreita (clamp 160–240px); sem isto um nome
+   longo quebrava em várias linhas e cobria metade do rosto. */
+.vr-pbl-head-cam .lk-participant-metadata { max-width: calc(100% - 12px); padding: 2px 6px; }
+.vr-pbl-head-cam .lk-participant-name {
+  font-size: 11px; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* ---------- Spotlight (compartilhamento de tela) ---------- */
 .vr-spotlight { position: relative; width: 100%; height: 100%; }
@@ -1079,6 +1087,8 @@
   /* inline-block (e não `align-self`): o container é `display:block` fora da abertura,
      então o sublinhado só acompanha o texto assim. */
   display: inline-block;
+  /* Título longo aparece por inteiro (quebra em várias linhas), sem estourar a coluna. */
+  max-width: 100%; overflow-wrap: break-word; line-height: 1.3;
 }
 
 /* Abertura: vinheta da série, centralizada e sem texto corrido. */
@@ -1087,7 +1097,12 @@
 }
 .vr-rot-marca { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--vr-text-dim); font-weight: 700; }
 .vr-rot-serie { font-size: 17px; color: var(--vr-text-dim); }
-.vr-rot-titulo { font-size: 30px; font-weight: 800; line-height: 1.25; max-width: 22ch; color: var(--vr-text); }
+/* Título do episódio: largura generosa e quebra equilibrada — títulos longos aparecem
+   completos (várias linhas), sem o corte estreito do antigo max-width: 22ch. */
+.vr-rot-titulo {
+  font-size: 30px; font-weight: 800; line-height: 1.25; color: var(--vr-text);
+  max-width: min(90%, 32ch); text-wrap: balance; overflow-wrap: break-word;
+}
 .vr-rot-direitos { font-size: 12px; color: var(--vr-text-dim); margin-top: 6px; }
 
 @media (max-width: 860px) {
@@ -1201,10 +1216,12 @@
   background: var(--brand-accent); border-color: var(--brand-accent); color: #fff;
 }
 .vr-pbl-qcard-text {
-  flex: 1; min-width: 0;
+  flex: 1; min-width: 0; max-height: 100%;
   font-size: clamp(14px, 1.55vw, 24px); font-weight: 600; line-height: 1.3;
   color: var(--vr-text);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+  /* Antes cortava em 4 linhas (line-clamp). Agora o texto longo aparece por inteiro:
+     se exceder a altura do card, rola dentro dele em vez de ser truncado. */
+  overflow-y: auto; overflow-wrap: break-word;
 }
 /* Entrada: desliza da lateral (direita) + fade, como uma carta passando pro lado. */
 @keyframes vrCascadeIn {

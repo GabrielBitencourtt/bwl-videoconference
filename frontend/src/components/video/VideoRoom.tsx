@@ -111,6 +111,9 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
   // A troca de sala remonta o LiveKitRoom (dispara onDisconnected); esse ref evita
   // que o swap seja confundido com o usuário saindo de verdade.
   const swapRef = useRef(false);
+  // Saída intencional (botão "Sair"): já tratada por requestLeave, então o
+  // onDisconnected que vem em seguida não deve disparar onLeft de novo.
+  const leftRef = useRef(false);
 
   const enterBreakout = useCallback(async (group: { id: string; name: string }, endsAt: string | null) => {
     if (!identity) return;
@@ -126,7 +129,18 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
 
   const handleDisconnected = useCallback(() => {
     if (swapRef.current) { swapRef.current = false; return; } // foi troca de grupo, não saída
+    if (leftRef.current) return;                              // saída intencional já tratada
     setLeft(true);    // mostra a tela de saída (essencial no embed, onde não há onLeft)
+    onLeft?.();
+  }, [onLeft]);
+
+  // Sair de verdade: desmonta o LiveKitRoom levantando `left`. Não dependemos de
+  // room.disconnect() sozinho porque `connect` fica sempre true no LiveKitRoom — a
+  // desconexão manual podia ser desfeita por uma reconexão automática ("Sair" travava).
+  const requestLeave = useCallback(() => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    setLeft(true);
     onLeft?.();
   }, [onLeft]);
 
@@ -189,7 +203,7 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
           <div>Você saiu da sala.</div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button className="vr-join-btn" style={{ minWidth: 180 }} onClick={() => { setBreakout(null); setLeft(false); }}>Entrar novamente</button>
+            <button className="vr-join-btn" style={{ minWidth: 180 }} onClick={() => { leftRef.current = false; setBreakout(null); setLeft(false); }}>Entrar novamente</button>
             {onLeft && <button className="vr-join-btn" style={{ minWidth: 140, background: "transparent", border: "1px solid var(--vr-border)" }} onClick={() => onLeft()}>Voltar ao início</button>}
           </div>
         </div>
@@ -233,7 +247,7 @@ export default function VideoRoom({ roomId, guestToken, speakerInviteId, display
         className="vr-root"
         onDisconnected={handleDisconnected}
       >
-        <RoomShell roomId={roomId} roomTitle={roomTitle} isStaff={!!isStaff} inviteUrl={inviteUrl} senderName={displayName} identity={identity ?? undefined} breakout={boCtx} />
+        <RoomShell roomId={roomId} roomTitle={roomTitle} isStaff={!!isStaff} inviteUrl={inviteUrl} senderName={displayName} identity={identity ?? undefined} breakout={boCtx} onLeaveRoom={requestLeave} />
         {identity && <RemoteControlEnforcer roomId={roomId} identity={identity} isStaff={!!isStaff} />}
         {isStaff && !breakout && identity && (
           <HostBroadcast roomId={roomId} identity={identity} displayName={displayName} />
@@ -567,7 +581,7 @@ function PreJoin({ title, name, camOn, micOn, setCamOn, setMicOn, onJoin }: {
 }
 
 /* ---------------- In-room shell ---------------- */
-function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx }) {
+function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout, onLeaveRoom }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx; onLeaveRoom: () => void }) {
   const sdk = useSDK();
   // O painel começa sempre fechado (chat/participantes) — o vídeo aparece inteiro.
   const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(null);
@@ -1090,6 +1104,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
             onToggleRecording={toggleRecording}
             showQr={!!packageUrl}
             onQr={() => setQrOpen(true)}
+            onLeaveRoom={onLeaveRoom}
           />
           <div className="vr-meta">
             {recording && <span className="vr-rec">REC</span>}
@@ -1152,6 +1167,10 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
                 // Demais etapas: a tela do roteiro correspondente.
                 <div className="vr-pbl-present-big" {...bannerProps}><RoteiroStage stage={pblStage} roteiro={roteiro} /></div>
               )
+            ) : pblStage === "session_start" ? (
+              // Pré-atividades: SÓ o facilitador vê a abertura/roteiro. Para o aluno a
+              // área de apresentação fica limpa até o facilitador iniciar a sessão.
+              <div className="vr-pbl-present-big" />
             ) : chartForStudents ? (
               // "Mostrar gráfico" em diante: o aluno também vê o gráfico — segue o filtro
               // do facilitador e não vê a contagem de pendentes.
@@ -2394,13 +2413,13 @@ function ScormPanel({ roomId }: { roomId: string }) {
 }
 
 /* ---------------- Controls ---------------- */
-function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsActive, peopleCount, boardActive, onToggleBoard, recording, onToggleRecording, showQr, onQr }: {
+function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsActive, peopleCount, boardActive, onToggleBoard, recording, onToggleRecording, showQr, onQr, onLeaveRoom }: {
   isStaff: boolean; scorm: boolean; panel: string | null;
   setPanel: (p: "chat" | "people" | "breakout" | "scorm" | null) => void;
   onOpenSettings: () => void; settingsActive: boolean;
   peopleCount: number; boardActive: boolean; onToggleBoard: () => void;
   recording: boolean; onToggleRecording: () => void;
-  showQr?: boolean; onQr?: () => void;
+  showQr?: boolean; onQr?: () => void; onLeaveRoom?: () => void;
 }) {
   const mic = useTrackToggle({ source: Track.Source.Microphone });
   const cam = useTrackToggle({ source: Track.Source.Camera });
@@ -2419,13 +2438,13 @@ function ControlBar({ isStaff, scorm, panel, setPanel, onOpenSettings, settingsA
       <Ctrl label="Chat" icon={I.chat} active={panel === "chat"}
         onClick={() => setPanel(panel === "chat" ? null : "chat")} />
       {showQr && (
-        <Ctrl label="Pacote" icon={I.qr} title="Abrir o QR code do pacote da atividade"
+        <Ctrl label="Código" icon={I.qr} title="Abrir o código (QR) do pacote da atividade"
           onClick={() => onQr?.()} />
       )}
 
       <div className="vr-sep" />
 
-      <Ctrl label="Sair" icon={I.phone} leave onClick={() => room.disconnect()} />
+      <Ctrl label="Sair" icon={I.phone} leave onClick={() => { void room.disconnect(); onLeaveRoom?.(); }} />
     </div>
   );
 }
