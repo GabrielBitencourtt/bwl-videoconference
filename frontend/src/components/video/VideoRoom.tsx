@@ -387,6 +387,12 @@ const BROADCAST_SUFFIX = "__bc";
 const isBroadcast = (id: string) => id.endsWith(BROADCAST_SUFFIX);
 // Participante do egress (gravador headless) — não é uma pessoa, nunca vira tile.
 const isEgress = (id: string) => id.startsWith("EG_");
+// Screen-share que o facilitador publica só para a GRAVAÇÃO (a captura da própria aba).
+// Marcado com este nome para ser invisível aos participantes (filtrado nas grades) e
+// exibido apenas pelo egress (RecordingView).
+const REC_TRACK_NAME = "rec-screen";
+const isRecTrack = (t: { publication?: { trackName?: string } }) =>
+  t.publication?.trackName === REC_TRACK_NAME;
 
 /* HostBroadcast: publica o microfone do facilitador em TODAS as salas de grupo ao
  *  mesmo tempo — a "sala do facilitador". Montado dentro do <LiveKitRoom> apenas
@@ -638,6 +644,64 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
   const canEditBoard = amStaff || boardEdit;
   const room = useRoomContext();
 
+  // ── Gravação = captura da tela do facilitador (só tela real) ──
+  // O facilitador compartilha a própria aba; o egress grava esse track. O modal fica
+  // aberto até a permissão; sem ela, não grava. O track é publicado com nome próprio
+  // (REC_TRACK_NAME) para ser invisível aos participantes e visível só ao egress.
+  const recTrackRef = useRef<MediaStreamTrack | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);   // modal "permita a captura"
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureErr, setCaptureErr] = useState<string | null>(null);
+
+  const stopRecordingAll = () => {
+    setRecording(false);
+    sdk.recording.stop(roomId).catch(() => {});
+    const t = recTrackRef.current;
+    if (t) { try { room.localParticipant.unpublishTrack(t as any); } catch { /* */ } t.stop(); }
+    recTrackRef.current = null;
+  };
+
+  // Publica a captura da ABA ATUAL (preferCurrentTab: o facilitador não escolhe janela,
+  // só confirma) e então inicia o egress. Retorna true se a gravação começou.
+  const startScreenRecording = async (): Promise<boolean> => {
+    setCaptureBusy(true);
+    setCaptureErr(null);
+    try {
+      const md = navigator.mediaDevices as any;
+      const stream: MediaStream = await md.getDisplayMedia({
+        video: { frameRate: 30 },
+        audio: false,
+        preferCurrentTab: true,   // Chrome/Edge: já aponta o seletor para esta aba
+      });
+      const track = stream.getVideoTracks()[0];
+      // Facilitador clicou "parar de compartilhar" na tarja do navegador → encerra a gravação.
+      track.addEventListener("ended", () => { if (recTrackRef.current === track) stopRecordingAll(); });
+      await room.localParticipant.publishTrack(track as any, {
+        source: Track.Source.ScreenShare,
+        name: REC_TRACK_NAME,   // invisível aos participantes; o egress grava por este nome
+      });
+      recTrackRef.current = track;
+      await sdk.recording.start(roomId).catch(() => {});
+      setRecording(true);
+      setCaptureOpen(false);
+      setCaptureBusy(false);
+      return true;
+    } catch {
+      // Cancelou o seletor / negou a permissão: mantém o modal aberto para tentar de novo.
+      setCaptureErr("Não foi possível iniciar a captura. Clique em Permitir e confirme o compartilhamento da aba.");
+      setCaptureBusy(false);
+      return false;
+    }
+  };
+
+  // Pede a gravação: abre o modal (o clique em Permitir é o gesto que o navegador exige
+  // para getDisplayMedia). Chamado pelo auto-record, pela 1ª questão e pelo botão REC.
+  const requestRecording = () => {
+    if (recording || recTrackRef.current) return;
+    setCaptureErr(null);
+    setCaptureOpen(true);
+  };
+
   // Branding (logo/cor/nome) via endpoint público — funciona até no embed
   // cross-site, onde rooms.get (autenticado) não está disponível.
   useEffect(() => {
@@ -657,10 +721,10 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
     sdk.rooms.get(roomId).then((r) => {
       setShowBoard(!!r.whiteboard_active);
       setRecording(!!r.recording_enabled);
-      // "Gravação" toggle at room creation → auto-start once when the host joins.
+      // Gravação automática (opção da sala): ao entrar, o facilitador recebe o modal
+      // de captura de tela. Não vale para o egress (recorder), que só grava.
       if (isStaff && !recorder && (r as any).auto_record && !r.recording_enabled) {
-        setRecording(true);
-        sdk.recording.start(roomId).catch(() => setRecording(false));
+        requestRecording();
       }
     }).catch(() => {});
     return sdk.subscribe(roomId, (event, payload) => {
@@ -702,13 +766,8 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
   }, [scorm, isStaff, roomId]);
 
   const toggleRecording = () => {
-    if (recording) {
-      setRecording(false);
-      sdk.recording.stop(roomId).catch(() => setRecording(true));
-    } else {
-      setRecording(true);
-      sdk.recording.start(roomId).catch(() => setRecording(false));
-    }
+    if (recording) stopRecordingAll();
+    else requestRecording();   // abre o modal de captura de tela
   };
 
   const toggleBoard = () => {
@@ -1080,7 +1139,7 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
           // revelada é transmitida por dados para os alunos verem a mesma tela.
           // 1ª questão: inicia a gravação em BACKGROUND (o egress pode demorar a responder;
           // NÃO pode bloquear o avanço do sequenciador — era isso que travava o botão).
-          if (reveal === 0 && !recording) { setRecording(true); sdk.recording.start(roomId).catch(() => setRecording(false)); }
+          if (reveal === 0 && !recording) requestRecording();   // 1ª questão pede a captura de tela
           const n = reveal + 1;
           setReveal(n);
           if (n >= plenaryTotal) await goToStep("situational");
@@ -1105,7 +1164,7 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
           await goToStep(next);
           break;
         case "closing":
-          if (recording) { setRecording(false); await sdk.recording.stop(roomId).catch(() => setRecording(true)); }
+          if (recording) stopRecordingAll();
           // Mesma correção do questionário de riscos: libera as percepções ao ENTRAR
           // na etapa de feedback, e não ao sair dela.
           await sdk.openpbl.release(roomId, "perceptions").catch(() => {});
@@ -1378,6 +1437,31 @@ export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, i
         </div>
       )}
 
+      {/* Captura de tela para a gravação: fica aberto até o facilitador permitir. O
+          clique em "Permitir" é o gesto que o navegador exige para getDisplayMedia;
+          com preferCurrentTab, o seletor já vem apontado para esta aba. Sem backdrop
+          clicável — a gravação só começa com a captura autorizada. */}
+      {captureOpen && (
+        <div className="vr-modal-backdrop">
+          <div className="vr-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Iniciar a gravação da aula</h3>
+            <p>
+              A gravação captura a tela desta videoconferência. Clique em <b>Permitir</b> e,
+              na janela do navegador, confirme o compartilhamento <b>desta aba</b>.
+            </p>
+            {captureErr && <p className="vr-modal-err">{captureErr}</p>}
+            <div className="vr-modal-actions">
+              <button className="vr-modal-btn" disabled={captureBusy}
+                onClick={() => { setCaptureOpen(false); }}>Agora não</button>
+              <button className="vr-modal-btn vr-modal-btn-primary" disabled={captureBusy}
+                onClick={startScreenRecording}>
+                {captureBusy ? "Aguardando…" : "Permitir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmEnd && (
         <div className="vr-modal-backdrop" onClick={() => setConfirmEnd(false)}>
           <div className="vr-modal" onClick={(e) => e.stopPropagation()}>
@@ -1434,7 +1518,7 @@ function VideoGrid() {
 
   // Spotlight: se alguém compartilha tela, ela ocupa tudo, os demais somem e a
   // câmera de quem compartilha (o facilitador) vira um box pequeno sobreposto.
-  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication);
+  const screen = tracks.find((t) => t.source === Track.Source.ScreenShare && t.publication && !isRecTrack(t));
   if (screen) {
     const sharerCam = tracks.find(
       (t) => t.source === Track.Source.Camera && t.participant.identity === screen.participant.identity,
@@ -2050,7 +2134,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
   // Em aula OpenPBL (`sideScreen`) a transmissão vai para a coluna esquerda
   // (.vr-pbl-side), então aqui a grade mostra só os alunos.
   const screen = !strip && !sideScreen && tracks.find(
-    (t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal,
+    (t) => t.source === Track.Source.ScreenShare && t.publication && !t.participant.isLocal && !isRecTrack(t),
   );
 
   const byId: Record<string, any> = {};
