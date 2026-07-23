@@ -2108,8 +2108,12 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, pinned }: { roste
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
   // Câmera na área de conteúdo: a FIXADA (pinned) quando definida; senão, o anfitrião.
+  // O egress (gravador) NUNCA é candidato: como não está no roster, o fallback
+  // `identity === localIdentity` o elegeria como host e a gravação mostrava o tile
+  // vazio do próprio gravador no lugar da câmera do facilitador.
   const pinnedTrack = pinned ? tracks.find((t) => t.participant.identity === pinned) : null;
-  const hostTrack = pinnedTrack || tracks.find((t) => isHostTile(t.participant.identity));
+  const hostTrack = pinnedTrack
+    || tracks.find((t) => !isEgress(t.participant.identity) && isHostTile(t.participant.identity));
 
   if (!hostTrack) return null;
   return (
