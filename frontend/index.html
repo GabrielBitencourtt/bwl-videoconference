@@ -1,8 +1,12 @@
 <!doctype html>
-<html lang="pt-br">
+<html lang="pt-br" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Impede a barra "traduzir esta página?" do Chrome. No egress (Chrome headless
+         com locale en-US) ela aparecia em cima da gravação; para o usuário PT numa
+         página PT o Chrome nem oferece, então não muda nada em produção. -->
+    <meta name="google" content="notranslate" />
     <title>Video Rooms Kit</title>
   </head>
   <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>

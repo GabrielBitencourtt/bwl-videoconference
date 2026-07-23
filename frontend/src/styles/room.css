@@ -696,7 +696,10 @@
    apresentação (que agora ocupa o frame inteiro). Sem espaço vazio e sem cortar o
    rosto. `pointer-events: none` para não bloquear cliques na apresentação. */
 .vr-pbl-side .vr-pbl-head {
-  position: absolute; top: 12px; left: 12px; z-index: 5; pointer-events: none;
+  /* z-index ACIMA da cascata (.vr-pbl-question, z-index 5): com o mesmo valor, quem
+     vem depois no DOM ganha — a cascata cobria a câmera, e como ela refaz o fade-in
+     a cada item revelado, o facilitador via a própria imagem piscando. */
+  position: absolute; top: 12px; left: 12px; z-index: 6; pointer-events: none;
   flex: none; width: clamp(160px, 26%, 240px); padding: 0; gap: 0;
   border-bottom: none; background: transparent;
 }
@@ -801,9 +804,7 @@
   .vr-pbl-side .vr-pbl-present-big { flex: none; min-height: 54vh; }
   /* Sem PiP aqui: a câmera não cobre nada, então o vão reservado para ela some
      (senão sobraria um buraco no topo e um recuo inútil no texto). */
-  :root { --vr-cam-w: 0px; --vr-cam-h: 0px; }
-  .vr-rot:not(.vr-rot-abertura)::before { display: none; }
-  .vr-pbl-question:not([data-inline]) { padding-top: clamp(14px, 2.2vh, 26px); }
+  :root { --vr-cam-h: 0px; }   /* zera a reserva: o padding volta aos 18px de base */
 }
 
 /* ===================== Barra "Atividade atual" + apresentação ===================== */
@@ -861,14 +862,21 @@
 /* gap 14px = mesmo espaçamento do header-right (verde ↔ microfone), então o ▶ verde
    fica equidistante do rótulo e do 1º botão vermelho. */
 .vr-seq { display: inline-flex; align-items: center; gap: 14px; flex: none; margin-bottom: 15px; }
+/* Rótulo da etapa. Dentro do sequenciador (.vr-seq) é um <span> informativo — quem
+   avança é só o botão verde. Fora dele a mesma classe ainda veste um botão real
+   ("Assumir controle"), por isso o cursor/hover ficam escopados ali. */
 .vr-seq-label {
+  display: inline-flex; align-items: center;
   height: 30px; padding: 0 12px; border-radius: 8px;
   background: var(--vr-surface-2); color: var(--vr-text);
   border: 1px solid var(--vr-border); font-size: 12.5px; font-weight: 700;
-  cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s;
+  white-space: nowrap; transition: background .15s, border-color .15s;
 }
-.vr-seq-label:hover { border-color: var(--brand-accent); }
-.vr-seq-label:disabled { opacity: .6; cursor: default; }
+button.vr-seq-label { cursor: pointer; }
+button.vr-seq-label:hover { border-color: var(--brand-accent); }
+button.vr-seq-label:disabled { opacity: .6; cursor: default; }
+/* O rótulo é só leitura: não rouba o clique nem vira alvo de seleção acidental. */
+.vr-seq .vr-seq-label { cursor: default; user-select: none; }
 .vr-seq-go {
   display: grid; place-items: center; width: 46px; height: 30px; border-radius: 8px;
   background: #22c55e; border: none; color: #fff; cursor: pointer; transition: background .15s;
@@ -876,9 +884,11 @@
 .vr-seq-go:hover { background: #16a34a; }
 .vr-seq-go:disabled { opacity: .6; cursor: default; }
 .vr-seq-go svg { width: 18px; height: 18px; }
-/* Última tarefa = Encerrar a sala: rótulo vermelho. */
+/* Última tarefa = Encerrar a sala: rótulo E botão em vermelho (antes o botão sumia
+   nesta etapa, e a ação só existia no rótulo — que agora não é mais clicável). */
 .vr-seq[data-danger] .vr-seq-label { background: var(--vr-danger); color: #fff; border-color: var(--vr-danger); }
-.vr-seq[data-danger] .vr-seq-label:hover { background: #dc2626; }
+.vr-seq[data-danger] .vr-seq-go { background: var(--vr-danger); }
+.vr-seq[data-danger] .vr-seq-go:hover { background: #dc2626; }
 
 /* "Atividade atual" do aluno, no header: nome da etapa (sincronizado com o
    sequenciador do facilitador) + class-code ao lado (só durante o registro).
@@ -1003,6 +1013,10 @@
 /* Área principal OpenPBL: apresentação à ESQUERDA + webcams dos alunos à DIREITA */
 .vr-pbl-main { display: flex; flex-direction: row; gap: 10px; width: 100%; height: 100%; min-height: 0; }
 .vr-pbl-present-big {
+  /* Container de tamanho: a apresentação ocupa ~35% da largura da tela, então medir
+     em `vw` dava texto grande demais em monitor largo e pequeno demais em janela
+     estreita. Com `cqi`/`cqh` a tipografia acompanha o PAINEL. */
+  container-type: size;
   position: relative;
   flex: 1; min-width: 0; min-height: 0; border-radius: var(--vr-radius); overflow: hidden;
   background: var(--vr-bg); box-shadow: var(--vr-shadow); border: 1px solid var(--vr-border);
@@ -1036,45 +1050,32 @@
    (ver `.vr-pbl-side .vr-pbl-head`). Precisa acompanhar aquelas medidas: é o que
    impede o texto de ficar embaixo da webcam. */
 :root {
-  --vr-cam-w: clamp(160px, 26%, 240px);   /* usado em contexto de LARGURA (o % bate) */
-  /* Altura fixa de propósito: em contexto de altura, `26%` resolveria contra a ALTURA
-     do container e daria um valor sem relação com a câmera. 240px (teto do clamp) em
-     16/9 = 135px, mais os 12px do `top` — cobre o pior caso. */
+  /* Altura fixa de propósito: `26%` (a largura da câmera) resolveria, em contexto de
+     altura, contra a ALTURA do container — um valor sem relação com a webcam.
+     240px (teto do clamp da largura) em 16/9 = 135px, mais os 12px do `top`. */
   --vr-cam-h: 147px;
 }
 
-/* Telas de texto usam layout de bloco com um vão flutuante no canto: o texto
-   CONTORNA a câmera em vez de ser empurrado para baixo dela — assim nada fica
-   coberto e não se perde uma faixa inteira de altura. A abertura é centralizada
-   e continua em flex (o canto superior esquerdo dela é vazio). */
-.vr-rot:not(.vr-rot-abertura) { display: block; }
-.vr-rot:not(.vr-rot-abertura) > * + * { margin-top: 14px; }
-.vr-rot:not(.vr-rot-abertura)::before {
-  content: ""; float: left;
-  /* Folga extra: o % da câmera é sobre a coluna inteira, e aqui sobre a área já
-     descontada do padding do texto — sem a margem o recuo ficaria curto. */
-  width: calc(var(--vr-cam-w) + 24px);
-  height: var(--vr-cam-h);
-}
-/* Cada bloco do roteiro é um card — mesma superfície/borda/raio do .vr-pbl-qcard das
-   questões da plenária, para as duas telas lerem como um sistema só. */
-.vr-rot-bloco {
-  font-size: 15px; line-height: 1.6; color: var(--vr-text);
-  background: var(--vr-surface); border: 1px solid var(--vr-border);
-  border-radius: var(--vr-radius); padding: 14px 18px;
-}
-.vr-rot-bloco p { margin: 0 0 8px; }
-.vr-rot-bloco p:last-child { margin-bottom: 0; }
-.vr-rot-bloco-tit { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: var(--vr-text); }
+/* O conteúdo começa ABAIXO da faixa da câmera. Cheguei a fazer o texto contornar a
+   webcam com um vão flutuante, o que poupava altura — mas exigia layout de bloco, e
+   aí as cascatas de dentro do roteiro perdiam a divisão de altura entre os cards
+   (ficavam pequenas, com a sinopse cortada no meio da frase). Manter flex e reservar
+   a faixa deixa a cascata do roteiro IDÊNTICA à da plenária. */
+.vr-rot:not(.vr-rot-abertura) { padding-top: calc(var(--vr-cam-h) + 18px); }
+/* Listas com marcador dentro de um bloco fixo (o bloco em si usa .vr-pbl-intro). */
 .vr-rot-bloco-ul { margin: 0; padding-left: 22px; }
 .vr-rot-bloco-ul li { margin-bottom: 4px; }
+/* Conteúdo variável do roteiro com cabeçalho próprio (ex.: "Relembrando o episódio"),
+   no mesmo formato das cascatas. */
+.vr-rot-bloco-var { display: flex; flex-direction: column; gap: 8px; }
+
 /* "Relembrando o episódio": card único de destaque, o foco da tela da plenária. Usa o
    mesmo realce do card mais recente da cascata (.vr-pbl-qcard[data-latest]). */
 .vr-rot-destaque {
   border: 1px solid var(--brand-accent); border-left-width: 4px;
   background: var(--vr-surface-2); color: var(--vr-text);
   box-shadow: 0 10px 26px -12px rgba(0, 0, 0, .7);
-  border-radius: var(--vr-radius); padding: 14px 16px; font-size: 16px; line-height: 1.6;
+  border-radius: var(--vr-radius); padding: 14px 16px; font-size: clamp(14px, 3.2cqi, 20px); line-height: 1.55;
 }
 
 /* Título da seção do roteiro. Só a tela do Feedback da interação usa: lá a seção é a
@@ -1132,12 +1133,11 @@
   position: static; inset: auto; z-index: auto;
   padding: 0; background: none; color: inherit;
 }
-/* Em tela cheia os cards DIVIDEM a altura (`flex: 1 1 0`). Inline isso os colapsava:
-   dentro de um container de altura automática, base 0 + grow resolve para zero, e o
-   `overflow: hidden` cortava a sinopse/as questões orientadoras no meio da frase.
-   Inline o texto manda na altura. */
-.vr-pbl-question[data-inline] .vr-pbl-qcascade { flex: none; }
-.vr-pbl-question[data-inline] .vr-pbl-qcard { flex: none; overflow: visible; }
+/* Inline a cascata OCUPA a área que sobra da tela do roteiro — é isso que faz os
+   cards dividirem a altura (`flex: 1 1 0`) exatamente como na plenária. Sem o grow,
+   dentro de um container de altura automática a base 0 resolve para zero e os cards
+   colapsam, cortando o texto no meio da frase. */
+.vr-pbl-question[data-inline] { flex: 1 1 auto; min-height: 0; }
 
 /* Cabeçalho minimalista: rótulo discreto à esquerda; progresso (●) à direita. */
 .vr-pbl-qhead {
@@ -1146,13 +1146,12 @@
 /* Cascata em tela cheia (plenária/riscos): começa ABAIXO da câmera. Os cards esticam
    na largura toda e dividem a altura entre si, então recuar só o cabeçalho não
    bastaria — o 1º card ainda cairia atrás da webcam. */
-.vr-pbl-question:not([data-inline]) { padding-top: calc(var(--vr-cam-h) + 8px); }
+.vr-pbl-question:not([data-inline]) { padding-top: calc(var(--vr-cam-h) + clamp(14px, 2.2vh, 26px)); }
 .vr-pbl-qhead-label {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: clamp(11px, 1.05vw, 13px); font-weight: 700;
+  font-size: clamp(11px, 2.1cqi, 14px); font-weight: 700;
   letter-spacing: .14em; text-transform: uppercase; color: var(--vr-text-dim);
 }
-.vr-pbl-qhead-ico { font-size: 1.1em; opacity: .9; }
 .vr-pbl-qdots { display: inline-flex; align-items: center; gap: 7px; }
 .vr-pbl-qdot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--vr-border);
@@ -1172,11 +1171,11 @@
    a questão. `flex: none` para não roubar altura dos cards, que dividem o resto. */
 .vr-pbl-intro {
   flex: none;
-  padding: clamp(8px, 1.1vh, 13px) clamp(14px, 1.6vw, 22px);
+  padding: clamp(8px, 1.4cqh, 14px) clamp(14px, 3cqi, 22px);
   border-radius: var(--vr-radius);
   background: var(--vr-surface); border: 1px solid var(--vr-border);
   color: var(--vr-text-dim);
-  font-size: clamp(12px, 1.05vw, 14px); line-height: 1.55;
+  font-size: clamp(12px, 2.5cqi, 16px); line-height: 1.55;
 }
 .vr-pbl-intro p { margin: 0; }
 .vr-pbl-intro p + p { margin-top: 5px; }
@@ -1191,8 +1190,8 @@
 .vr-pbl-qcard {
   position: relative;
   flex: 1 1 0; min-height: 0; overflow: hidden;
-  display: flex; align-items: center; gap: clamp(12px, 1.3vw, 18px);
-  padding: clamp(10px, 1.5vh, 18px) clamp(16px, 1.8vw, 26px); border-radius: var(--vr-radius);
+  display: flex; align-items: center; gap: clamp(10px, 2.4cqi, 18px);
+  padding: clamp(8px, 1.6cqh, 18px) clamp(14px, 3.2cqi, 26px); border-radius: var(--vr-radius);
   background: var(--vr-surface); border: 1px solid var(--vr-border);
   text-align: left;
   transition: background .4s ease, border-color .4s ease, box-shadow .4s ease, opacity .4s ease;
@@ -1216,13 +1215,21 @@
   background: var(--brand-accent); border-color: var(--brand-accent); color: #fff;
 }
 .vr-pbl-qcard-text {
-  flex: 1; min-width: 0; max-height: 100%;
-  font-size: clamp(14px, 1.55vw, 24px); font-weight: 600; line-height: 1.3;
-  color: var(--vr-text);
-  /* Antes cortava em 4 linhas (line-clamp). Agora o texto longo aparece por inteiro:
-     se exceder a altura do card, rola dentro dele em vez de ser truncado. */
-  overflow-y: auto; overflow-wrap: break-word;
+  flex: 1; min-width: 0;
+  /* Escala pela largura do painel E pela altura que sobra para cada card (`--vr-qn`
+     = quantos cards a etapa tem). Sem o segundo termo, 5 cards num painel baixo
+     estouravam a caixa e o texto era cortado. */
+  font-size: clamp(13px, min(4.2cqi, calc(30cqh / var(--vr-qn, 3))), 23px);
+  font-weight: 600; line-height: 1.3;
+  color: var(--vr-text); overflow-wrap: break-word;
+  /* Quantas linhas cabem depende de quantos cards dividem a altura: com 2 cards
+     sobra espaço para um texto longo; com 5, cortar antes evita o card estourar. */
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
+  -webkit-line-clamp: 4;
 }
+.vr-pbl-qcascade[data-qn="1"] .vr-pbl-qcard-text { -webkit-line-clamp: 10; }
+.vr-pbl-qcascade[data-qn="2"] .vr-pbl-qcard-text { -webkit-line-clamp: 8; }
+.vr-pbl-qcascade[data-qn="3"] .vr-pbl-qcard-text { -webkit-line-clamp: 6; }
 /* Entrada: desliza da lateral (direita) + fade, como uma carta passando pro lado. */
 @keyframes vrCascadeIn {
   from { opacity: 0; transform: translateX(28px); }
