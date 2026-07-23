@@ -385,6 +385,8 @@ function BreakoutHostBar({ roomId, active, message, onEnter, onLeave }: {
  *  (sem câmera) que NÃO devem aparecer nas grades nem na contagem de participantes. */
 const BROADCAST_SUFFIX = "__bc";
 const isBroadcast = (id: string) => id.endsWith(BROADCAST_SUFFIX);
+// Participante do egress (gravador headless) — não é uma pessoa, nunca vira tile.
+const isEgress = (id: string) => id.startsWith("EG_");
 
 /* HostBroadcast: publica o microfone do facilitador em TODAS as salas de grupo ao
  *  mesmo tempo — a "sala do facilitador". Montado dentro do <LiveKitRoom> apenas
@@ -582,7 +584,7 @@ function PreJoin({ title, name, camOn, micOn, setCamOn, setMicOn, onJoin }: {
 }
 
 /* ---------------- In-room shell ---------------- */
-function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx }) {
+export function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity, learnerEmail, breakout, recorder = false }: { roomId: string; roomTitle: string; isStaff: boolean; inviteUrl: string | null; senderName?: string; identity?: string; learnerEmail?: string; breakout: BreakoutCtx; recorder?: boolean }) {
   const sdk = useSDK();
   // O painel começa sempre fechado (chat/participantes) — o vídeo aparece inteiro.
   const [panel, setPanel] = useState<"chat" | "people" | "breakout" | "scorm" | null>(null);
@@ -595,7 +597,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const [showBoard, setShowBoard] = useState(false);
   const [recording, setRecording] = useState(false);
   const [boardEdit, setBoardEdit] = useState(false);   // não-staff: pode editar o quadro?
-  const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
+  const participants = useParticipants().filter((p) => !isBroadcast(p.identity) && !isEgress(p.identity));
   const [brand, setBrand] = useState<Branding | null>(null);
   const [pubTitle, setPubTitle] = useState("");
   const [packageUrl, setPackageUrl] = useState<string | null>(null);  // URL do Pacote de Classe → QR code
@@ -656,7 +658,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
       setShowBoard(!!r.whiteboard_active);
       setRecording(!!r.recording_enabled);
       // "Gravação" toggle at room creation → auto-start once when the host joins.
-      if (isStaff && (r as any).auto_record && !r.recording_enabled) {
+      if (isStaff && !recorder && (r as any).auto_record && !r.recording_enabled) {
         setRecording(true);
         sdk.recording.start(roomId).catch(() => setRecording(false));
       }
@@ -770,7 +772,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   const zeradoRef = useRef(false);
   useEffect(() => {
     if (pblStage !== "show_chart") { zeradoRef.current = false; return; }
-    if (zeradoRef.current || !chartSeries.length) return;
+    if (recorder || zeradoRef.current || !chartSeries.length) return;
     zeradoRef.current = true;
     setChartFilter(chartSeries);
   }, [pblStage, chartSeries]);
@@ -959,13 +961,13 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   }, []);
 
   // Questões REVELADAS até agora (cascata): do roteiro do episódio, da 1ª até a atual.
-  const revealedQuestions = pblStage === "question" ? roteiroQuestions.slice(0, reveal + 1) : [];
+  const revealedQuestions = pblStage === "question" ? roteiroQuestions.slice(0, Math.max(1, shownCount)) : [];
 
   // O controlador transmite as questões já reveladas: o aluno renderiza a MESMA cascata.
   // Reenvia a cada 3s enquanto na etapa, para quem entrar depois. Fora da etapa, envia
   // lista vazia (limpa no aluno).
   useEffect(() => {
-    if (!amController || !room) return;   // só quem tem o controle transmite (sem duplicar)
+    if (recorder || !amController || !room) return;   // gravador só espelha; controlador transmite
     const inQ = pblStage === "question";
     const send = () => {
       // Só transmite com a conexão LiveKit pronta — senão publishData rejeita com
@@ -989,7 +991,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // aluno e moderador verem exatamente a mesma tela. Reenvia a cada 3s (quem entra no
   // meio da etapa pega o estado atual).
   useEffect(() => {
-    if (!amController || !room || revealItems.length < 2) return;
+    if (recorder || !amController || !room || revealItems.length < 2) return;
     const send = () => {
       if (room.state !== ConnectionState.Connected) return;
       try {
@@ -1008,7 +1010,7 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
   // fica sincronizado. Reenvia a cada 3s enquanto o gráfico está no ar (quem entra
   // depois já pega o filtro atual).
   useEffect(() => {
-    if (!amController || !room || !chartForStaff) return;
+    if (recorder || !amController || !room || !chartForStaff) return;
     const send = () => {
       if (room.state !== ConnectionState.Connected) return;
       try {
@@ -1175,13 +1177,13 @@ function RoomShell({ roomId, roomTitle, isStaff, inviteUrl, senderName, identity
           )}
           {/* Só o CONTROLADOR dirige o sequenciador. Outros host/moderadores veem
               "Assumir controle" (evita dois apresentando ao mesmo tempo). */}
-          {pblHost && !amController && (
+          {pblHost && !amController && !recorder && (
             <button className="vr-seq-label" title="Assumir o controle da apresentação/sequenciador"
               onClick={() => identity && setRole({ set_controller: true, controller: identity })}>
               Assumir controle
             </button>
           )}
-          {pblHost && amController && (
+          {pblHost && (amController || recorder) && (
             <div className="vr-seq" data-danger={pblStage === "done" || undefined}>
               {/* Só exibe a etapa atual — avançar é exclusividade do botão ao lado,
                   para não disparar a ação sem querer ao ler o rótulo. */}
@@ -1449,7 +1451,7 @@ function VideoGrid() {
     );
   }
 
-  const cams = tracks.filter((t) => t.source === Track.Source.Camera && !isBroadcast(t.participant.identity));
+  const cams = tracks.filter((t) => t.source === Track.Source.Camera && !isBroadcast(t.participant.identity) && !isEgress(t.participant.identity));
   return (
     <GridLayout tracks={cams} style={{ height: "100%" }}>
       <ParticipantTile />
@@ -2056,7 +2058,7 @@ function OpenPblStudentsGrid({ roster, localIsStaff, localIdentity, strip, sideS
   const isHostTile = (identity: string) =>
     byId[identity]?.is_staff ?? (identity === localIdentity && localIsStaff);
 
-  const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity) && !isBroadcast(t.participant.identity));
+  const studentTiles = tracks.filter((t) => t.source === Track.Source.Camera && !isHostTile(t.participant.identity) && !isBroadcast(t.participant.identity) && !isEgress(t.participant.identity));
 
   // O strip é uma faixa horizontal rolável; só a grade cheia se ajusta ao espaço.
   const { ref: gridRef, cols } = useFittedCols(strip ? 0 : studentTiles.length);
@@ -2123,7 +2125,7 @@ function PeoplePanel({ roomId, isStaff, inviteUrl, roster, moderators, controlle
   localIdentity?: string; onSetRole?: (body: any) => void;
 }) {
   const sdk = useSDK();
-  const participants = useParticipants().filter((p) => !isBroadcast(p.identity));
+  const participants = useParticipants().filter((p) => !isBroadcast(p.identity) && !isEgress(p.identity));
   const [copied, setCopied] = useState(false);
   // Estado local do que o host bloqueou por participante (true = bloqueado).
   const [blocked, setBlocked] = useState<Record<string, { screen?: boolean }>>({});

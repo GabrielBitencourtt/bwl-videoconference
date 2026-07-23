@@ -181,7 +181,9 @@ async def start_class(room_id: str, body: ClassStart, user: CurrentUser = Depend
 
 
 @router.get("/{room_id}/openpbl")
-async def get_class(room_id: str, user: CurrentUser = Depends(get_current_user)):
+async def get_class(room_id: str, user: CurrentUser | None = Depends(optional_user)):
+    # optional_user (não host): é estado só de leitura — mesma política de roster/roles/
+    # risk-chart. Necessário para o gravador (egress) espelhar a etapa atual sem host.
     row = await _get_class(room_id)
     if not row:
         return {"active": False}
