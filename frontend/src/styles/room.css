@@ -112,17 +112,19 @@
 /* Chip de nome translúcido (blur) — no lugar do bloco preto sólido. */
 .vr-grid-wrap .lk-participant-metadata,
 .vr-pbl-tile .lk-participant-metadata,
-.vr-pbl-head-cam .lk-participant-metadata {
-  background: rgba(10, 12, 20, .5); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, .1); border-radius: 8px; padding: 3px 6px;
-}
-/* Nome do facilitador sobre a câmera: chip compacto de UMA linha, ancorado embaixo e
-   com reticências. A PiP do facilitador é estreita (clamp 160–240px); sem isto um nome
-   longo quebrava em várias linhas e cobria metade do rosto. */
-.vr-pbl-head-cam .lk-participant-metadata { max-width: calc(100% - 12px); padding: 2px 6px; }
-.vr-pbl-head-cam .lk-participant-name {
-  font-size: 11px; max-width: 100%;
+/* Nome do facilitador sobre a câmera: só o PRIMEIRO nome, num chip mínimo ancorado no
+   canto inferior ESQUERDO para tapar o mínimo possível do rosto. A label nativa do
+   LiveKit é ocultada; o <span.vr-pbl-head-name> (renderizado em PblPanelHeader) a
+   substitui. A PiP do facilitador é estreita (clamp 176–264px). */
+.vr-pbl-head-cam { position: relative; }
+.vr-pbl-head-cam .lk-participant-metadata { display: none; }
+.vr-pbl-head-name {
+  position: absolute; left: 6px; bottom: 6px; z-index: 2;
+  max-width: calc(100% - 12px);
+  font-size: 10px; line-height: 1.4; color: #fff;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(10, 12, 20, .38); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, .08); border-radius: 7px; padding: 1px 7px;
 }
 
 /* ---------- Spotlight (compartilhamento de tela) ---------- */
@@ -700,7 +702,7 @@
      vem depois no DOM ganha — a cascata cobria a câmera, e como ela refaz o fade-in
      a cada item revelado, o facilitador via a própria imagem piscando. */
   position: absolute; top: 12px; left: 12px; z-index: 6; pointer-events: none;
-  flex: none; width: clamp(160px, 26%, 240px); padding: 0; gap: 0;
+  flex: none; width: clamp(176px, 28.6%, 264px); padding: 0; gap: 0;
   border-bottom: none; background: transparent;
 }
 .vr-pbl-side .vr-pbl-head-cam {

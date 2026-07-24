@@ -2148,9 +2148,16 @@ function PblPanelHeader({ roster, localIsStaff, localIdentity, pinned }: { roste
     || tracks.find((t) => !isEgress(t.participant.identity) && isHostTile(t.participant.identity));
 
   if (!hostTrack) return null;
+  // Só o primeiro nome sobre a câmera — o nome completo continua no painel de
+  // participantes. A label nativa do LiveKit é ocultada por CSS (.vr-pbl-head-cam
+  // .lk-participant-metadata) e este chip a substitui, tapando o mínimo do rosto.
+  const firstName = (hostTrack.participant.name || "").trim().split(/\s+/)[0] || "";
   return (
     <div className="vr-pbl-head" data-wide="1">
-      <div className="vr-pbl-head-cam"><ParticipantTile trackRef={hostTrack} /></div>
+      <div className="vr-pbl-head-cam">
+        <ParticipantTile trackRef={hostTrack} />
+        {firstName && <span className="vr-pbl-head-name">{firstName}</span>}
+      </div>
     </div>
   );
 }
